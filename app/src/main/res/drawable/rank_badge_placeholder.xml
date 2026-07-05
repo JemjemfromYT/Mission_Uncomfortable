@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    rank_badge_placeholder.xml
+    ─────────────────────────────────────────────────────────────────────────────
+    PURPOSE:
+      Placeholder vector drawable for the rank badge shown on the Dashboard.
+      This is displayed via the Image composable in RankBadgeSection until
+      real per-rank badge artwork is supplied.
+
+    USAGE:
+      1. Save this file as:
+             app/src/main/res/drawable/rank_badge_placeholder.xml
+      2. The Image composable in DashboardScreen.kt references it as:
+             painterResource(R.drawable.rank_badge_placeholder)
+      3. When real badge assets are ready, either:
+           a. Replace this file with the final artwork, OR
+           b. Add per-rank drawables (e.g. rank_badge_recruit.xml) and update
+              the Mission / Rank data class to point to the correct resId.
+
+    DESIGN:
+      Dark background circle with a stoic star motif — keeps the
+      dark/minimal aesthetic of the app while the real art is pending.
+      No text, no emojis, no colour outside the app palette.
+    ─────────────────────────────────────────────────────────────────────────────
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+
+    <!-- Outer dark circle — badge background -->
+    <path
+        android:fillColor="#1A1A1A"
+        android:pathData="M48,4
+                          A44,44 0 1,1 47.999,4
+                          Z" />
+
+    <!-- Thin border ring in muted gold — stoic accent -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#8B7536"
+        android:strokeWidth="2"
+        android:pathData="M48,6
+                          A42,42 0 1,1 47.999,6
+                          Z" />
+
+    <!--
+        Five-pointed star centred at (48,44) — classic rank/achievement symbol.
+        Points calculated for a star with outer radius 22 and inner radius 9,
+        starting from the top point (bearing 270 degrees).
+    -->
+    <path
+        android:fillColor="#8B7536"
+        android:pathData="M48,22
+                          L52.94,38.18 L70,38.18
+                          L56.53,47.82 L61.47,64
+                          L48,54.36 L34.53,64
+                          L39.47,47.82 L26,38.18
+                          L43.06,38.18 Z" />
+
+    <!-- Small subtitle line — room for future rank-tier label (kept as stroke) -->
+    <path
+        android:strokeColor="#8B7536"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:pathData="M34,72 L62,72" />
+
+</vector>
