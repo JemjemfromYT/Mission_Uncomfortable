@@ -11,6 +11,11 @@
  * In the future, these models will be populated from:
  *   - The local Room database (offline-first)
  *   - Supabase (synced in the background via WorkManager)
+ *
+ * ─── CHANGELOG ────────────────────────────────────────────────────────────────
+ *   v2 — Added `objective` and `rules` fields to Mission for military briefing format.
+ *        Added `isLocationDependent` to Mission to conditionally show "Swap Mission" button.
+ *        Added `discomfortRating` to Mission to store the post-completion 1-10 slider rating.
  */
 
 package com.example.missionuncomfortable.ui.dashboard
@@ -137,7 +142,7 @@ data class XpProgress(
  */
 enum class MissionStatus {
     ACTIVE,     // The user has been assigned the mission and hasn't completed it yet
-    COMPLETED,  // The user has submitted their reflection/photo and marked it done
+    COMPLETED,  // The user has submitted their discomfort rating and marked it done
     FAILED,     // The mission expired (day ended) without a completion submission
     LOCKED      // The user hasn't unlocked this difficulty tier yet (future use)
 }
@@ -145,20 +150,45 @@ enum class MissionStatus {
 /**
  * Mission — describes a single daily challenge assigned to the user.
  *
- * @param id            A unique identifier for this mission (will be a UUID from Supabase in production).
- * @param title         Short title of the mission, e.g. "The Silent Stranger".
- * @param description   Full description of what the user must do.
- * @param xpReward      How much XP the user earns for completing this mission.
- * @param status        Current status of the mission (see MissionStatus enum above).
- * @param difficulty    A 1–5 difficulty rating. Higher rank users get harder missions.
- * @param dateAssigned  The date this mission was assigned (ISO-8601 string, e.g. "2026-07-05").
+ * ─── v2 CHANGES ────────────────────────────────────────────────────────────
+ *   - Added `objective`:           A single clear sentence stating WHAT the user must do.
+ *                                  Shown as the "OBJECTIVE" section in the military briefing format.
+ *
+ *   - Added `rules`:               A list of specific constraints/steps for the mission.
+ *                                  Shown as the "RULES" section in the military briefing format.
+ *                                  Replaces the old monolithic `description` paragraph.
+ *
+ *   - Added `isLocationDependent`: True if the mission requires the user to travel to a
+ *                                  specific type of place (e.g., a coffee shop, a park, a mall).
+ *                                  When true, the "Swap Mission" button is shown on the card,
+ *                                  allowing the user to swap to a non-location-dependent mission.
+ *
+ *   - Added `discomfortRating`:    The user's submitted 1-10 discomfort rating for this mission.
+ *                                  Null means the user hasn't submitted a rating yet.
+ *                                  Populated when the user submits the post-mission discomfort slider.
+ * ───────────────────────────────────────────────────────────────────────────
+ *
+ * @param id                 A unique identifier for this mission (will be a UUID from Supabase in production).
+ * @param title              Short title of the mission, e.g. "The Silent Stranger".
+ * @param objective          A single clear sentence: WHAT must the user do? (military briefing: OBJECTIVE block).
+ * @param rules              A list of specific constraints and steps (military briefing: RULES block).
+ * @param xpReward           How much XP the user earns for completing this mission.
+ * @param status             Current status of the mission (see MissionStatus enum above).
+ * @param difficulty         A 1–5 difficulty rating. Higher rank users get harder missions.
+ * @param dateAssigned       The date this mission was assigned (ISO-8601 string, e.g. "2026-07-05").
+ * @param isLocationDependent True if the mission requires travelling to a specific type of location.
+ *                            Shows the "Swap Mission" button on the card when true.
+ * @param discomfortRating   The user's submitted 1–10 discomfort rating. Null = not yet submitted.
  */
 data class Mission(
-    val id: String,                          // Unique ID — will come from Supabase later
-    val title: String,                       // Short display title
-    val description: String,                 // Full instructions for what the user must do
-    val xpReward: Int,                       // XP granted on completion (e.g., 50)
-    val status: MissionStatus,               // Current state (ACTIVE, COMPLETED, etc.)
-    val difficulty: Int,                     // Difficulty tier 1–5
-    val dateAssigned: String                 // Date string, e.g. "2026-07-05"
+    val id: String,                                // Unique ID — will come from Supabase later
+    val title: String,                             // Short display title
+    val objective: String,                         // Single-sentence objective (what to do)
+    val rules: List<String>,                       // Ordered list of rules/constraints for the mission
+    val xpReward: Int,                             // XP granted on completion (e.g., 75)
+    val status: MissionStatus,                     // Current state (ACTIVE, COMPLETED, etc.)
+    val difficulty: Int,                           // Difficulty tier 1–5
+    val dateAssigned: String,                      // Date string, e.g. "2026-07-05"
+    val isLocationDependent: Boolean = false,      // True = user must travel somewhere specific
+    val discomfortRating: Int? = null             // 1–10 discomfort rating, null = not yet submitted
 )
