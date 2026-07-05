@@ -1,7 +1,6 @@
-// Top-level build file — configuration that applies to ALL modules in the project.
-// Individual module settings (like app dependencies) go in app/build.gradle.kts instead.
+// Root build file — applies to ALL modules. Keep this minimal.
+// Do NOT add kotlin.android here — AGP 9 handles Kotlin automatically.
 plugins {
-    alias(libs.plugins.android.application) apply false  // Android app plugin — applied in :app module
-    alias(libs.plugins.kotlin.android) apply false       // Kotlin Android plugin — applied in :app module
-    alias(libs.plugins.kotlin.compose) apply false       // Kotlin Compose compiler plugin — applied in :app module
+    alias(libs.plugins.android.application) apply false  // Android app plugin
+    alias(libs.plugins.kotlin.compose) apply false       // Compose compiler plugin
 }

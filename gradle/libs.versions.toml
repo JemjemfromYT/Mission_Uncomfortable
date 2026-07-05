@@ -19,7 +19,7 @@ androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-co
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 
-# Jetpack Compose — BOM manages all compose library versions automatically
+# Jetpack Compose — BOM manages all Compose library versions automatically
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
 androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
@@ -32,7 +32,6 @@ androidx-compose-runtime-livedata = { group = "androidx.compose.runtime", name =
 # Lifecycle — ViewModel + LiveData
 androidx-lifecycle-viewmodel-ktx = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-ktx", version.ref = "lifecycleViewmodelCompose" }
 androidx-lifecycle-livedata-ktx = { group = "androidx.lifecycle", name = "lifecycle-livedata-ktx", version.ref = "lifecycleViewmodelCompose" }
-# Provides viewModel() composable helper used in DashboardScreen
 androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycleViewmodelCompose" }
 
 # Activity Compose — needed for setContent {} in MainActivity
@@ -40,7 +39,6 @@ androidx-activity-compose = { group = "androidx.activity", name = "activity-comp
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
-# Kotlin Android plugin — compiles Kotlin code in Android projects
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
-# Kotlin Compose compiler plugin — required for Jetpack Compose with Kotlin 2.0+
+# NOTE: No kotlin-android here — AGP 9.0.1 applies Kotlin automatically. Adding it manually causes a conflict.
+# Compose compiler plugin — required for @Composable functions with Kotlin 2.0+
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
