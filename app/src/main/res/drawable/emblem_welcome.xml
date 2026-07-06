@@ -1,0 +1,141 @@
+<!--
+  emblem_welcome.xml
+  Welcome Screen Identity Emblem
+
+  Design language: A tactical targeting reticle. Precision. Purpose.
+  This is NOT a rank badge — it is the app's identity mark.
+  It represents the act of choosing a target and locking on.
+  Crosshair lines bridge the inner and outer ring. Diagonal ticks.
+  The only element in the codebase that represents the app itself.
+
+  Place this file at:
+    app/src/main/res/drawable/emblem_welcome.xml
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="200"
+    android:viewportHeight="200">
+
+    <!-- ── Dark background fill ─────────────────────────────────────────── -->
+    <path
+        android:fillColor="#0D0D0D"
+        android:pathData="M100,2 A98,98 0 1,0 100,198 A98,98 0 1,0 100,2 Z" />
+
+    <!-- ── Outer ring ────────────────────────────────────────────────────── -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="4"
+        android:pathData="M100,12 A88,88 0 1,0 100,188 A88,88 0 1,0 100,12 Z" />
+
+    <!-- ── Inner ring ────────────────────────────────────────────────────── -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="2.5"
+        android:pathData="M100,38 A62,62 0 1,0 100,162 A62,62 0 1,0 100,38 Z" />
+
+    <!-- ── Subtle mid ring ───────────────────────────────────────────────── -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="0.8"
+        android:strokeAlpha="0.3"
+        android:pathData="M100,56 A44,44 0 1,0 100,144 A44,44 0 1,0 100,56 Z" />
+
+    <!-- ── Orthogonal crosshair lines — bridge outer ring to inner ring ──── -->
+    <!--
+        North: y=12 (outer top) to y=38 (inner top)
+        South: y=188 to y=162
+        East:  x=188 to x=162
+        West:  x=12 to x=38
+    -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="3"
+        android:pathData="
+            M100,14 L100,37
+            M100,186 L100,163
+            M186,100 L163,100
+            M14,100 L37,100" />
+
+    <!-- ── Inner crosshair lines (short, near center, with gap) ─────────── -->
+    <!--
+        Leave a gap of ~14 units in the center for the center dot.
+        Lines run from r=18 to r=40 (just inside the mid ring).
+    -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="2"
+        android:pathData="
+            M100,60 L100,82
+            M100,140 L100,118
+            M140,100 L118,100
+            M60,100 L82,100" />
+
+    <!-- ── Diagonal tick marks at 45° on the outer ring ─────────────────── -->
+    <!--
+        At 45°:  outer (162,162)→(154,154)  (90*0.707=63.6 → 163.6,163.6)
+        At 135°: (36,162)→(46,154)
+        At 225°: (36,36)→(46,46)
+        At 315°: (162,36)→(154,46)
+
+        Also shorter ticks at 22.5° increments for refinement:
+        At 22.5°: 90*cos(22.5)=83.1, 90*sin(22.5)=34.4 → (183,134)→(177,130)
+        (Adding 4 more at 22.5/67.5/112.5/157.5 and mirrors)
+    -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="2.5"
+        android:pathData="
+            M164,164 L155,155
+            M36,164 L45,155
+            M36,36 L45,45
+            M164,36 L155,45" />
+
+    <!-- ── Shorter secondary diagonal ticks ─────────────────────────────── -->
+    <!--
+        At 22.5°: 90*cos(22.5°)=83.1, 90*sin(22.5°)=34.4 → (183.1, 134.4)
+                   Inner at 82: 82*cos(22.5°)=75.8, 82*sin(22.5°)=31.3 → (175.8,131.3)
+        At 67.5°: cos(67.5°)=0.383, sin(67.5°)=0.924 → (134.5,183.1)→(131.4,175.7)
+        Mirrors:
+        At 112.5°: (65.5,183.1)→(68.6,175.7)
+        At 157.5°: (16.9,134.4)→(24.2,131.3)
+        At 202.5°: (16.9,65.6)→(24.2,68.7)
+        At 247.5°: (65.5,16.9)→(68.6,24.3)
+        At 292.5°: (134.5,16.9)→(131.4,24.3)
+        At 337.5°: (183.1,65.6)→(175.8,68.7)
+    -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="1.2"
+        android:strokeAlpha="0.6"
+        android:pathData="
+            M183,134 L176,131
+            M134,183 L131,176
+            M66,183 L69,176
+            M17,134 L24,131
+            M17,66 L24,69
+            M66,17 L69,24
+            M134,17 L131,24
+            M183,66 L176,69" />
+
+    <!-- ── Center dot — the lock-on point ────────────────────────────────── -->
+    <path
+        android:fillColor="#C8A84B"
+        android:pathData="M94,100 A6,6 0 1,0 106,100 A6,6 0 1,0 94,100 Z" />
+
+    <!-- ── Center dot outer ring ─────────────────────────────────────────── -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="1.5"
+        android:strokeAlpha="0.5"
+        android:pathData="M86,100 A14,14 0 1,0 114,100 A14,14 0 1,0 86,100 Z" />
+
+</vector>

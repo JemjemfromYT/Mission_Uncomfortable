@@ -22,9 +22,15 @@
  *        The ViewModel uses this to recalculate rank automatically whenever XP changes,
  *        removing any hardcoded threshold logic from business code.
  *        ALL_RANKS now includes thresholds for all 5 tiers.
+ *
+ *   v4 — Wired real badge drawable resource IDs into each Rank.
+ *        Each rank now points to its own unique badge drawable instead of the placeholder.
+ *        RankBadgeSection in DashboardScreen uses rank.badgeResId to display the correct art.
  */
 
 package com.example.missionuncomfortable.ui.dashboard
+
+import com.example.missionuncomfortable.R   // v4: needed to reference R.drawable.badge_* resource IDs
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RANK MODEL
@@ -51,57 +57,68 @@ package com.example.missionuncomfortable.ui.dashboard
  *                        Level 4 (Conqueror):  900 XP
  *                        Level 5 (Sovereign):  1400 XP
  *
- * @param badgeResId    The drawable resource ID for the rank's badge image.
- *                      Use R.drawable.badge_observer, etc. once real badge art is added.
- *                      Set to null for now — we show rank_badge_placeholder until art is ready.
+ * @param badgeResId    v4: The drawable resource ID for the rank's unique badge image.
+ *                      Each rank now has its own distinct artwork:
+ *                        Level 1 → R.drawable.badge_observer   (open eye)
+ *                        Level 2 → R.drawable.badge_initiate   (single chevron)
+ *                        Level 3 → R.drawable.badge_challenger (shield + sword)
+ *                        Level 4 → R.drawable.badge_conqueror  (eagle wings)
+ *                        Level 5 → R.drawable.badge_sovereign  (military crown)
+ *                      RankBadgeSection reads this field — no other code needs updating
+ *                      when badge art changes. To swap an image, only edit the entry here.
  */
 data class Rank(
     val level: Int,                    // Numeric level: 1, 2, 3, 4, or 5
     val title: String,                 // Human-readable title shown in the UI
     val description: String,          // Flavour text describing the rank
     val xpThreshold: Int,              // v3: Min total XP required to enter this rank
-    val badgeResId: Int? = null        // Optional drawable resource ID — null = show placeholder
+    val badgeResId: Int? = null        // v4: Drawable resource ID for this rank's badge
 )
 
 // A hardcoded list of all 5 possible ranks.
-// This is the single source of truth for rank names, descriptions, and XP thresholds.
+// This is the single source of truth for rank names, descriptions, XP thresholds, and badge art.
 // The ViewModel reads this list to determine rank boundaries after XP changes.
-// To change rank names, descriptions, or how much XP each rank costs, only edit here.
+// To change rank names, descriptions, XP costs, or badge art, only edit here.
 val ALL_RANKS = listOf(
-    // Level 1 — Beginner. The user is just starting out, observing the world around them.
+    // Level 1 — Beginner. The user is just starting out, watching the world around them.
     Rank(
         level = 1,
         title = "The Observer",
         description = "You watch from the sidelines. The first step is awareness.",
-        xpThreshold = 0          // Starting rank — everyone begins at 0 XP
+        xpThreshold = 0,                         // Starting rank — everyone begins at 0 XP
+        badgeResId = R.drawable.badge_observer   // Open eye — watching, not yet acting
     ),
     // Level 2 — The user has started taking small, tentative social steps.
     Rank(
         level = 2,
         title = "The Initiate",
         description = "You've taken your first uncomfortable step. Keep moving.",
-        xpThreshold = 200        // Reached at 200 total XP
+        xpThreshold = 200,                       // Reached at 200 total XP
+        badgeResId = R.drawable.badge_initiate   // Single military chevron — one stripe earned
     ),
     // Level 3 — The user regularly engages in mild-to-moderate discomfort.
     Rank(
         level = 3,
         title = "The Challenger",
         description = "Discomfort is now familiar. You push through anyway.",
-        xpThreshold = 500        // Reached at 500 total XP
+        xpThreshold = 500,                         // Reached at 500 total XP
+        badgeResId = R.drawable.badge_challenger   // Shield + sword — actively fighting
     ),
     // Level 4 — The user actively seeks out difficult social situations.
     Rank(
         level = 4,
         title = "The Conqueror",
         description = "You don't avoid hard things. You walk straight into them.",
-        xpThreshold = 900        // Reached at 900 total XP
+        xpThreshold = 900,                        // Reached at 900 total XP
+        badgeResId = R.drawable.badge_conqueror   // Eagle wings spread — dominant, commanding
     ),
     // Level 5 — The pinnacle. The user has mastered social resilience.
     Rank(
         level = 5,
         title = "The Sovereign",
         description = "You command your environment. Nothing is impossible.",
-        xpThreshold = 1400       // Reached at 1400 total XP — the final rank
+        xpThreshold = 1400,                      // Reached at 1400 total XP — the final rank
+        badgeResId = R.drawable.badge_sovereign  // Military crown — the pinnacle
     )
 )
 

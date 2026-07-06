@@ -1,0 +1,109 @@
+<!--
+  badge_challenger.xml
+  Rank Level 3 — The Challenger
+
+  Design language: A heater shield with a sword driven through its center.
+  The user is no longer just watching or walking — they are fighting.
+  Two rings + 8-point tick marks. Three rank bars.
+
+  Place this file at:
+    app/src/main/res/drawable/badge_challenger.xml
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="200"
+    android:viewportHeight="200">
+
+    <!-- ── Dark background fill ─────────────────────────────────────────── -->
+    <path
+        android:fillColor="#0D0D0D"
+        android:pathData="M100,2 A98,98 0 1,0 100,198 A98,98 0 1,0 100,2 Z" />
+
+    <!-- ── Outer gold ring ───────────────────────────────────────────────── -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="5"
+        android:pathData="M100,10 A90,90 0 1,0 100,190 A90,90 0 1,0 100,10 Z" />
+
+    <!-- ── Inner accent ring ─────────────────────────────────────────────── -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="1.5"
+        android:strokeAlpha="0.55"
+        android:pathData="M100,20 A80,80 0 1,0 100,180 A80,80 0 1,0 100,20 Z" />
+
+    <!-- ── 8-point tick marks (N/S/E/W + diagonals) ────────────────────── -->
+    <!--
+        N:   (100,10)→(100,20)    S:   (100,190)→(100,180)
+        E:   (190,100)→(180,100)  W:   (10,100)→(20,100)
+        NE 45°:  outer(163.6,36.4)→inner(156.6,43.4)  ≈ (164,36)→(157,43)
+        SE 135°: (163.6,163.6)→(156.6,156.6)          ≈ (164,164)→(157,157)
+        SW 225°: (36.4,163.6)→(43.4,156.6)            ≈ (36,164)→(43,157)
+        NW 315°: (36.4,36.4)→(43.4,43.4)              ≈ (36,36)→(43,43)
+    -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="2"
+        android:pathData="
+            M100,12 L100,20
+            M100,188 L100,180
+            M188,100 L180,100
+            M12,100 L20,100
+            M164,36 L157,43
+            M164,164 L157,157
+            M36,164 L43,157
+            M36,36 L43,43" />
+
+    <!-- ── Shield outline — heater shield shape ─────────────────────────── -->
+    <!--
+        Top-left (44,52) to top-right (156,52) — flat top
+        Sides angle outward to (158,106) then curve sharply inward
+        to meet at a point at (100,166)
+    -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="3.5"
+        android:pathData="M44,52 L156,52 L156,52 Q158,52 158,104 Q158,138 100,166 Q42,138 42,104 Q42,52 44,52 Z" />
+
+    <!-- ── Shield center horizontal divider line ────────────────────────── -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="1.5"
+        android:strokeAlpha="0.4"
+        android:pathData="M44,90 L156,90" />
+
+    <!-- ── Sword blade (narrow, tapers to point at top) ─────────────────── -->
+    <path
+        android:fillColor="#C8A84B"
+        android:pathData="M97,162 L97,92 L100,48 L103,92 L103,162 Z" />
+
+    <!-- ── Sword crossguard (horizontal bar) ────────────────────────────── -->
+    <path
+        android:fillColor="#C8A84B"
+        android:pathData="M76,88 L124,88 L124,96 L76,96 Z" />
+
+    <!-- ── Sword handle / grip ───────────────────────────────────────────── -->
+    <path
+        android:fillColor="#C8A84B"
+        android:pathData="M95,96 L95,148 L105,148 L105,96 Z" />
+
+    <!-- ── Sword pommel (rounded base) ──────────────────────────────────── -->
+    <path
+        android:fillColor="#C8A84B"
+        android:pathData="M93,148 L107,148 L107,158 Q100,164 93,158 Z" />
+
+    <!-- ── Rank indicator bars — three bars = Level 3 ───────────────────── -->
+    <path
+        android:fillColor="#C8A84B"
+        android:pathData="
+            M68,172 L132,172 L132,175 L68,175 Z
+            M68,177 L132,177 L132,180 L68,180 Z
+            M68,182 L132,182 L132,185 L68,185 Z" />
+
+</vector>

@@ -1,0 +1,150 @@
+<!--
+  badge_sovereign.xml
+  Rank Level 5 — The Sovereign
+
+  Design language: A military crown — the pinnacle. Triple rings.
+  12-point tick marks. Jewel accent circles at each crown point.
+  The heaviest, most ornate badge in the set. You have arrived.
+
+  Place this file at:
+    app/src/main/res/drawable/badge_sovereign.xml
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="200"
+    android:viewportHeight="200">
+
+    <!-- ── Dark background fill ─────────────────────────────────────────── -->
+    <path
+        android:fillColor="#0D0D0D"
+        android:pathData="M100,2 A98,98 0 1,0 100,198 A98,98 0 1,0 100,2 Z" />
+
+    <!-- ── Outer gold ring (heaviest of all badges) ───────────────────────── -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="6"
+        android:pathData="M100,10 A90,90 0 1,0 100,190 A90,90 0 1,0 100,10 Z" />
+
+    <!-- ── Second ring ───────────────────────────────────────────────────── -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="2.5"
+        android:pathData="M100,20 A80,80 0 1,0 100,180 A80,80 0 1,0 100,20 Z" />
+
+    <!-- ── Third ring (tight to second) ─────────────────────────────────── -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="1"
+        android:pathData="M100,26 A74,74 0 1,0 100,174 A74,74 0 1,0 100,26 Z" />
+
+    <!-- ── 12-point tick marks (every 30°) between rings 1 and 2 ─────────── -->
+    <!--
+        r=90→r=80 at each 30° step.
+        0°:   (190,100)→(180,100)
+        30°:  (100+90*0.866, 100+90*0.5)=(178,145)→(100+80*0.866,100+80*0.5)=(169,140)
+        60°:  (145,178)→(140,169)
+        90°:  (100,190)→(100,180)
+        120°: (55,178)→(60,169)
+        150°: (22,145)→(31,140)
+        180°: (10,100)→(20,100)
+        210°: (22,55)→(31,60)
+        240°: (55,22)→(60,31)
+        270°: (100,10)→(100,20)
+        300°: (145,22)→(140,31)
+        330°: (178,55)→(169,60)
+    -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="2"
+        android:pathData="
+            M188,100 L180,100
+            M178,145 L169,140
+            M145,178 L140,169
+            M100,188 L100,180
+            M55,178 L60,169
+            M22,145 L31,140
+            M12,100 L20,100
+            M22,55 L31,60
+            M55,22 L60,31
+            M100,12 L100,20
+            M145,22 L140,31
+            M178,55 L169,60" />
+
+    <!-- ── Crown body — filled 3-point military crown ───────────────────── -->
+    <!--
+        Crown base: y=150, left x=34, right x=166
+        Base top (battlement level): y=108
+        Left point apex:   (66, 52)
+        Center point apex: (100, 40)
+        Right point apex:  (134, 52)
+        Dips between points at: (83, 95) and (117, 95)
+    -->
+    <path
+        android:fillColor="#C8A84B"
+        android:pathData="M34,150 L34,108 L66,52 L83,95 L100,40 L117,95 L134,52 L166,108 L166,150 Z" />
+
+    <!-- ── Crown base band (dark stripe to define base from body) ─────────── -->
+    <path
+        android:fillColor="#0D0D0D"
+        android:pathData="M34,136 L166,136 L166,148 L34,148 Z" />
+
+    <!-- ── Re-draw crown outline over dark base band ─────────────────────── -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="2"
+        android:strokeAlpha="0.6"
+        android:pathData="M34,150 L34,108 L66,52 L83,95 L100,40 L117,95 L134,52 L166,108 L166,150 Z" />
+
+    <!-- ── Jewel at left crown point ─────────────────────────────────────── -->
+    <path
+        android:fillColor="#0D0D0D"
+        android:pathData="M60,52 A7,7 0 1,0 74,52 A7,7 0 1,0 60,52 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="2"
+        android:pathData="M60,52 A7,7 0 1,0 74,52 A7,7 0 1,0 60,52 Z" />
+
+    <!-- ── Jewel at center crown point ───────────────────────────────────── -->
+    <path
+        android:fillColor="#0D0D0D"
+        android:pathData="M91,40 A9,9 0 1,0 109,40 A9,9 0 1,0 91,40 Z" />
+    <path
+        android:fillColor="#C8A84B"
+        android:pathData="M91,40 A9,9 0 1,0 109,40 A9,9 0 1,0 91,40 Z" />
+
+    <!-- ── Jewel at right crown point ────────────────────────────────────── -->
+    <path
+        android:fillColor="#0D0D0D"
+        android:pathData="M126,52 A7,7 0 1,0 140,52 A7,7 0 1,0 126,52 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="2"
+        android:pathData="M126,52 A7,7 0 1,0 140,52 A7,7 0 1,0 126,52 Z" />
+
+    <!-- ── Crown base decorative dots (3 dots on the base band) ──────────── -->
+    <path
+        android:fillColor="#C8A84B"
+        android:pathData="
+            M66,142 A4,4 0 1,0 74,142 A4,4 0 1,0 66,142 Z
+            M96,142 A4,4 0 1,0 104,142 A4,4 0 1,0 96,142 Z
+            M126,142 A4,4 0 1,0 134,142 A4,4 0 1,0 126,142 Z" />
+
+    <!-- ── Rank indicator bars — five bars = Level 5 ─────────────────────── -->
+    <path
+        android:fillColor="#C8A84B"
+        android:pathData="
+            M60,163 L140,163 L140,166 L60,166 Z
+            M60,168 L140,168 L140,171 L60,171 Z
+            M60,173 L140,173 L140,176 L60,176 Z
+            M60,178 L140,178 L140,181 L60,181 Z
+            M60,183 L140,183 L140,186 L60,186 Z" />
+
+</vector>

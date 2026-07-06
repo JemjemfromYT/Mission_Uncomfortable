@@ -1,0 +1,119 @@
+<!--
+  badge_conqueror.xml
+  Rank Level 4 — The Conqueror
+
+  Design language: Spread eagle wings. Dominant. Expansive. Commanding.
+  Art Deco geometric wings — not cartoon, not clipart. Precise angles.
+  Double outer ring. Center orb. 8 ticks. Four rank bars.
+
+  Place this file at:
+    app/src/main/res/drawable/badge_conqueror.xml
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="200"
+    android:viewportHeight="200">
+
+    <!-- ── Dark background fill ─────────────────────────────────────────── -->
+    <path
+        android:fillColor="#0D0D0D"
+        android:pathData="M100,2 A98,98 0 1,0 100,198 A98,98 0 1,0 100,2 Z" />
+
+    <!-- ── Outer gold ring (heavy) ──────────────────────────────────────── -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="5.5"
+        android:pathData="M100,10 A90,90 0 1,0 100,190 A90,90 0 1,0 100,10 Z" />
+
+    <!-- ── Secondary inner ring ──────────────────────────────────────────── -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="2.5"
+        android:pathData="M100,18 A82,82 0 1,0 100,182 A82,82 0 1,0 100,18 Z" />
+
+    <!-- ── Tertiary decorative ring ─────────────────────────────────────── -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="0.8"
+        android:strokeAlpha="0.4"
+        android:pathData="M100,26 A74,74 0 1,0 100,174 A74,74 0 1,0 100,26 Z" />
+
+    <!-- ── 8-point tick marks bridging outer to secondary ring ──────────── -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="2.5"
+        android:pathData="
+            M100,12 L100,18
+            M100,188 L100,182
+            M188,100 L182,100
+            M12,100 L18,100
+            M163,37 L157,43
+            M163,163 L157,157
+            M37,163 L43,157
+            M37,37 L43,43" />
+
+    <!-- ── LEFT WING — geometric Art Deco spread ────────────────────────── -->
+    <!--
+        The wing fans out from the center body (around x=78, y=100)
+        Primary feather group sweeps from center-left up and outward.
+        Built from 3 overlapping triangular feather shapes.
+
+        Feather 1 (outermost, longest):
+          Root at (82,104), sweeps to (24,72), tip folds back to (36,100)
+        Feather 2 (mid):
+          Root at (84,100), sweeps to (32,78), folds to (46,102)
+        Feather 3 (innermost):
+          Root at (86,96), sweeps to (44,82), folds to (62,98)
+    -->
+    <path
+        android:fillColor="#C8A84B"
+        android:pathData="M82,106 L24,72 L20,84 L52,100 L18,106 L24,118 L56,110 L48,130 L62,128 L84,108 Z" />
+
+    <!-- ── RIGHT WING — mirrored ─────────────────────────────────────────── -->
+    <path
+        android:fillColor="#C8A84B"
+        android:pathData="M118,106 L176,72 L180,84 L148,100 L182,106 L176,118 L144,110 L152,130 L138,128 L116,108 Z" />
+
+    <!-- ── Wing upper feather detail lines ──────────────────────────────── -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#0D0D0D"
+        android:strokeWidth="1.5"
+        android:pathData="
+            M82,106 L52,100
+            M82,104 L48,90
+            M84,100 L56,88" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#0D0D0D"
+        android:strokeWidth="1.5"
+        android:pathData="
+            M118,106 L148,100
+            M118,104 L152,90
+            M116,100 L144,88" />
+
+    <!-- ── Center body orb — solid filled circle ────────────────────────── -->
+    <path
+        android:fillColor="#C8A84B"
+        android:pathData="M84,100 A16,16 0 1,0 116,100 A16,16 0 1,0 84,100 Z" />
+
+    <!-- ── Center orb inner dark circle (creates ring appearance) ────────── -->
+    <path
+        android:fillColor="#0D0D0D"
+        android:pathData="M91,100 A9,9 0 1,0 109,100 A9,9 0 1,0 91,100 Z" />
+
+    <!-- ── Rank indicator bars — four bars = Level 4 ────────────────────── -->
+    <path
+        android:fillColor="#C8A84B"
+        android:pathData="
+            M65,168 L135,168 L135,171 L65,171 Z
+            M65,173 L135,173 L135,176 L65,176 Z
+            M65,178 L135,178 L135,181 L65,181 Z
+            M65,183 L135,183 L135,186 L65,186 Z" />
+
+</vector>

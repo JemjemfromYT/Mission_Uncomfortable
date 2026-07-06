@@ -1,0 +1,71 @@
+<!--
+  badge_initiate.xml
+  Rank Level 2 — The Initiate
+
+  Design language: A single bold military chevron pointing upward.
+  One step taken. One stripe earned. Clean, no-nonsense.
+  Two rings (outer + thin accent). N/S/E/W tick marks. Two rank bars.
+
+  Place this file at:
+    app/src/main/res/drawable/badge_initiate.xml
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="120dp"
+    android:viewportWidth="200"
+    android:viewportHeight="200">
+
+    <!-- ── Dark background fill ─────────────────────────────────────────── -->
+    <path
+        android:fillColor="#0D0D0D"
+        android:pathData="M100,2 A98,98 0 1,0 100,198 A98,98 0 1,0 100,2 Z" />
+
+    <!-- ── Outer gold ring ───────────────────────────────────────────────── -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="5"
+        android:pathData="M100,10 A90,90 0 1,0 100,190 A90,90 0 1,0 100,10 Z" />
+
+    <!-- ── Inner accent ring ─────────────────────────────────────────────── -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="1.5"
+        android:strokeAlpha="0.5"
+        android:pathData="M100,22 A78,78 0 1,0 100,178 A78,78 0 1,0 100,22 Z" />
+
+    <!-- ── N/S/E/W tick marks between outer and accent ring ─────────────── -->
+    <!--
+        North: (100,10)→(100,22)    South: (100,190)→(100,178)
+        East:  (190,100)→(178,100)  West:  (10,100)→(22,100)
+    -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C8A84B"
+        android:strokeWidth="2.5"
+        android:pathData="
+            M100,12 L100,21
+            M100,188 L100,179
+            M188,100 L179,100
+            M12,100 L21,100" />
+
+    <!-- ── Chevron — bold filled shape ──────────────────────────────────── -->
+    <!--
+        Apex at (100, 58). Descends to y=136 at sides x=52 and x=148.
+        Stroke width of the chevron arm = 14 units.
+        Outer: M52,136 L100,58 L148,136
+        Inner (cut): M65,136 L100,75 L135,136
+    -->
+    <path
+        android:fillColor="#C8A84B"
+        android:pathData="M52,136 L100,58 L148,136 L135,136 L100,75 L65,136 Z" />
+
+    <!-- ── Rank indicator bars — two bars = Level 2 ─────────────────────── -->
+    <path
+        android:fillColor="#C8A84B"
+        android:pathData="
+            M72,156 L128,156 L128,160 L72,160 Z
+            M72,163 L128,163 L128,167 L72,167 Z" />
+
+</vector>

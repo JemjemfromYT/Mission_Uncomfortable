@@ -31,16 +31,22 @@
  *   v1 — Initial implementation.
  *        Single-screen welcome with badge image, title, tagline, and "BEGIN YOUR JOURNEY" button.
  *        Wired to MainActivity via the onStartJourney callback.
+ *
+ *   v2 — Replaced the rank_badge_placeholder with the dedicated emblem_welcome drawable.
+ *        The welcome screen now has its own identity mark — a tactical targeting reticle —
+ *        distinct from any rank badge. The reticle represents precision and purpose,
+ *        not a user's current level. This decouples the app's identity mark from the
+ *        rank progression system.
  */
 
 package com.example.missionuncomfortable.ui.welcome
 
 // ─── IMPORTS ──────────────────────────────────────────────────────────────────
-import androidx.compose.foundation.Image                        // Displays the rank badge image
+import androidx.compose.foundation.Image                        // Displays the welcome emblem image
 import androidx.compose.foundation.background                   // Sets background colour
 import androidx.compose.foundation.clickable                    // Makes the button tappable
 import androidx.compose.foundation.layout.*                    // Box, Column, Spacer, padding, fillMaxSize, etc.
-import androidx.compose.foundation.shape.CircleShape            // Clips the badge image to a circle
+import androidx.compose.foundation.shape.CircleShape            // Clips the emblem image to a circle
 import androidx.compose.foundation.shape.RoundedCornerShape     // Rounded corners on the CTA button
 import androidx.compose.material3.Text                          // Text composable
 import androidx.compose.runtime.Composable                      // Marks a function as a composable
@@ -97,19 +103,23 @@ fun WelcomeScreen(onStartJourney: () -> Unit) {
                 .padding(horizontal = 36.dp)  // Generous side padding so text doesn't hug the edges
         ) {
 
-            // ── RANK BADGE IMAGE ───────────────────────────────────────────
-            // Reuses the same placeholder badge as the Dashboard.
-            // When real badge art is ready, swap for a dedicated welcome/intro image.
+            // ── WELCOME EMBLEM ─────────────────────────────────────────────
+            // v2: Now uses emblem_welcome — a tactical targeting reticle that serves
+            // as the app's identity mark. This is NOT a rank badge.
+            // The reticle represents precision, purpose, and locking onto a target.
+            // It is distinct from every rank badge so the two systems are visually separate:
+            //   - The emblem = the app's identity (appears only here, once, on first launch)
+            //   - Rank badges = the user's progress (appear on the Dashboard throughout use)
             Image(
-                painter = painterResource(id = R.drawable.rank_badge_placeholder),
-                contentDescription = "Mission Uncomfortable emblem",  // Accessibility label
+                painter = painterResource(id = R.drawable.emblem_welcome),
+                contentDescription = "Mission Uncomfortable targeting emblem",  // Accessibility label
                 contentScale = ContentScale.Fit,     // Scale to fit within the 96dp circle
                 modifier = Modifier
-                    .size(96.dp)                     // Slightly smaller than the Dashboard's 120dp
-                    .clip(CircleShape)               // Mask to a circle — matches the badge design
+                    .size(96.dp)                     // Slightly smaller than the Dashboard's 120dp badge
+                    .clip(CircleShape)               // Mask to a circle — clean containment
             )
 
-            Spacer(modifier = Modifier.height(48.dp))  // Generous breathing room below the badge
+            Spacer(modifier = Modifier.height(48.dp))  // Generous breathing room below the emblem
 
             // ── MAIN TITLE ────────────────────────────────────────────────
             // Two-line title for visual weight — kept in all-caps for the stoic aesthetic.
