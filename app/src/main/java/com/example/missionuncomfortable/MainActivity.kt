@@ -55,12 +55,20 @@
  *          prefs.edit { putBoolean(KEY_HAS_SEEN_WELCOME, true) }
  *        Added import androidx.core.content.edit to support the KTX lambda.
  *        No logic changes — behaviour is identical.
+ *
+ *   v4 — Fixed Android Studio warning: "Remove redundant qualifier name"
+ *        at the getSharedPreferences() call.
+ *        Inside an Activity (which IS a Context), writing Context.MODE_PRIVATE
+ *        is redundant — MODE_PRIVATE is already in scope directly.
+ *        Changed: getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+ *            to: getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+ *        Removed the now-unused `import android.content.Context` line.
+ *        No logic changes — behaviour is identical.
  */
 
 package com.example.missionuncomfortable
 
 // ─── IMPORTS ──────────────────────────────────────────────────────────────────
-import android.content.Context                              // Needed to access SharedPreferences
 import android.os.Bundle                                    // Standard Activity lifecycle parameter
 import androidx.activity.ComponentActivity                  // Compose-compatible base Activity class
 import androidx.activity.compose.setContent                 // Sets the Compose UI as the Activity's content view
@@ -120,7 +128,10 @@ class MainActivity : ComponentActivity() {
         // ── READ FIRST-RUN FLAG ────────────────────────────────────────────
         // Open (or create) the SharedPreferences file in private mode —
         // only this app can read or write it.
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        // v4: Changed Context.MODE_PRIVATE → MODE_PRIVATE to remove the
+        // "redundant qualifier name" warning. Activity IS a Context so
+        // MODE_PRIVATE is already in scope without the qualifier.
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
 
         // Check whether the user has already completed onboarding.
         // getBoolean returns the default (false) if the key has never been written.

@@ -79,6 +79,10 @@
  *             MissionRepository.getAlternateMission(currentMission.id).
  *
  *        6. `onRefresh()` now reloads from prefs + MissionRepository instead of placeholder data.
+ *
+ *   v4.1 — FIXED: Replaced the API-26-only date class with
+ *           java.util.Calendar + java.text.SimpleDateFormat (available since API 1).
+ *           This makes the file compatible with minSdk 24.
  */
 
 package com.example.missionuncomfortable.ui.dashboard
@@ -88,7 +92,9 @@ import android.content.Context
 import androidx.core.content.edit                  // KTX: enables the `edit { }` lambda on SharedPreferences
 import androidx.lifecycle.AndroidViewModel         // v4: gives us Application context for SharedPreferences
 import com.example.missionuncomfortable.data.MissionRepository
-import java.time.LocalDate
+import java.text.SimpleDateFormat                  // v4.1: API 1+ date formatting (minSdk 24 compatible)
+import java.util.Calendar                          // v4.1: API 1+ date access (minSdk 24 compatible)
+import java.util.Locale                            // v4.1: needed by SimpleDateFormat to prevent locale digit substitution
 
 /**
  * DashboardUiState — a single data class that holds EVERYTHING the Dashboard screen needs to display.
@@ -182,6 +188,28 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // PRIVATE HELPER — TODAY'S DATE STRING (API 24+ COMPATIBLE)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * getTodayDateString — returns today's date as a "yyyy-MM-dd" string.
+     *
+     * Uses SimpleDateFormat + Calendar (API 1+) instead of the java.time package
+     * because java.time requires API 26 and our minSdk is 24.
+     *
+     * Locale.US is specified explicitly to prevent locale-specific digit
+     * substitution on devices set to non-Latin locales (e.g. Arabic).
+     * The value produced by MissionRepository.getMissionForToday() uses the
+     * same format and Locale, so the comparison in loadInitialData() always works.
+     *
+     * @return A date string like "2026-07-06".
+     */
+    private fun getTodayDateString(): String {
+        return SimpleDateFormat("yyyy-MM-dd", Locale.US)
+            .format(Calendar.getInstance().time)
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // PRIVATE HELPER — XP & RANK CALCULATION
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -260,7 +288,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         // ── STEP 2: Check if today's mission is already done ──────────────
         // getString returns "" if the key has never been written.
         val lastCompletedDate = prefs.getString(KEY_LAST_COMPLETED_DATE, "") ?: ""
-        val todayString = LocalDate.now().toString()   // "yyyy-MM-dd"
+        // getTodayDateString() uses Calendar + SimpleDateFormat (API 1+, minSdk 24 compatible).
+        val todayString = getTodayDateString()
         val alreadyCompletedToday = (lastCompletedDate == todayString)
 
         // ── STEP 3: Get today's mission from the repository ───────────────
@@ -434,7 +463,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         // KTX `edit { }` lambda (from androidx.core.content.edit):
         //   More idiomatic than the old .edit().put___().apply() chain.
         //   Applies changes asynchronously in the background (same as .apply()).
-        val todayString = LocalDate.now().toString()
+        //
+        // getTodayDateString() uses Calendar + SimpleDateFormat (API 1+, minSdk 24 compatible).
+        val todayString = getTodayDateString()
         prefs.edit {
             putInt(KEY_TOTAL_XP, newTotalXp)
             putString(KEY_LAST_COMPLETED_DATE, todayString)

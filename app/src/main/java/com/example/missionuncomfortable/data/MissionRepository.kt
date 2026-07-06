@@ -1,9 +1,6 @@
 // ============================================================
 // FILE: app/src/main/java/com/example/missionuncomfortable/data/MissionRepository.kt
 //
-// NEW FILE — create the `data` package directory if it doesn't exist.
-// Full path: app/src/main/java/com/example/missionuncomfortable/data/
-//
 // PURPOSE: Single source of truth for all available missions.
 //
 //   - Holds a curated list of 7 Uncomfortable Missions.
@@ -21,13 +18,19 @@
 // NOTE: `dateAssigned` in the library missions is set to "" as a placeholder.
 //       getMissionForToday() stamps today's real date on the returned mission
 //       via .copy(dateAssigned = ...) so it is always accurate.
+//
+// v2 — FIXED: Replaced the API-26-only date class with
+//      java.util.Calendar + java.text.SimpleDateFormat (available since API 1).
+//      This makes the file compatible with minSdk 24.
 // ============================================================
 
 package com.example.missionuncomfortable.data
 
 import com.example.missionuncomfortable.ui.dashboard.Mission
 import com.example.missionuncomfortable.ui.dashboard.MissionStatus
-import java.time.LocalDate
+import java.text.SimpleDateFormat   // API 1+ — used for "yyyy-MM-dd" date string formatting
+import java.util.Calendar           // API 1+ — used to compute today's epoch day
+import java.util.Locale             // Needed by SimpleDateFormat to prevent locale digit substitution
 
 object MissionRepository {
 
@@ -175,24 +178,50 @@ object MissionRepository {
     // --------------------------------------------------------
     // getMissionForToday()
     //
-    // Uses LocalDate.now().toEpochDay() as a deterministic index
-    // into the mission list. This means:
-    //   - The same mission is shown all day long (stable per device clock).
-    //   - A new mission appears at midnight when the date changes.
-    //   - With 7 missions, the rotation repeats every 7 days.
+    // Deterministic daily mission selection — same mission all day,
+    // new mission at midnight, 7-day rotation cycle.
     //
-    // The returned mission has `dateAssigned` stamped with today's
-    // real date string (yyyy-MM-dd) so the data is always accurate.
+    // HOW IT WORKS (API 24+ compatible):
+    //   1. Get today's epoch day: normalise Calendar to midnight in the
+    //      device's local timezone, then divide timeInMillis by ms-per-day.
+    //      This gives a stable integer that only changes at local midnight.
+    //   2. Use (epochDay % 7) as an index into ALL_MISSIONS.
+    //   3. The safeIndex guard handles negative values (dates before 1970).
+    //   4. Stamp today's real date string onto the returned mission via .copy()
+    //      so dateAssigned is always accurate.
     //
-    // The +size guard (% size + size) % size handles dates before
-    // 1970-01-01 which produce a negative epoch day — purely defensive.
+    // WHY Calendar INSTEAD OF java.time?
+    //   The java.time package (e.g. toEpochDay()) requires API 26.
+    //   minSdk is 24, so we use Calendar + SimpleDateFormat instead
+    //   (both available since API 1 with no extra dependencies).
     // --------------------------------------------------------
     fun getMissionForToday(): Mission {
-        val epochDay = LocalDate.now().toEpochDay()
+        // ── Compute today's epoch day (API 24+ compatible) ────────────────
+        // Normalise to midnight local time before dividing — ensures the
+        // value is stable for the full 24-hour local day and only ticks
+        // forward when the device's clock crosses midnight.
+        val cal = Calendar.getInstance()
+        cal.set(Calendar.HOUR_OF_DAY, 0)
+        cal.set(Calendar.MINUTE, 0)
+        cal.set(Calendar.SECOND, 0)
+        cal.set(Calendar.MILLISECOND, 0)
+        val epochDay = cal.timeInMillis / (24L * 60L * 60L * 1000L)
+
+        // ── Compute safe list index ────────────────────────────────────────
         val rawIndex = (epochDay % ALL_MISSIONS.size).toInt()
+        // The double-modulo + add guards against negative rawIndex values
+        // for dates before 1970-01-01 (purely defensive — unlikely in practice).
         val safeIndex = ((rawIndex % ALL_MISSIONS.size) + ALL_MISSIONS.size) % ALL_MISSIONS.size
+
+        // ── Stamp today's date string onto the mission ─────────────────────
+        // Locale.US prevents Arabic-Indic digit substitution on some devices
+        // (e.g. a device set to Arabic locale would otherwise produce "٢٠٢٦-٠٧-٠٦").
+        // The comparison in DashboardViewModel uses the same format, so they match.
+        val todayDateString = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+            .format(Calendar.getInstance().time)
+
         return ALL_MISSIONS[safeIndex].copy(
-            dateAssigned = LocalDate.now().toString()   // Stamp today's real date
+            dateAssigned = todayDateString   // e.g. "2026-07-06"
         )
     }
 
@@ -210,8 +239,10 @@ object MissionRepository {
     // --------------------------------------------------------
     fun getAlternateMission(currentMissionId: String): Mission {
         val candidates = ALL_MISSIONS.filter { it.id != currentMissionId }
+        val todayDateString = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+            .format(Calendar.getInstance().time)
         return candidates.random().copy(
-            dateAssigned = LocalDate.now().toString()   // Stamp today's real date
+            dateAssigned = todayDateString   // Stamp today's real date
         )
     }
 }
