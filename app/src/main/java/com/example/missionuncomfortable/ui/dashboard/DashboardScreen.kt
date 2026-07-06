@@ -345,11 +345,12 @@ private fun RankBadgeSection(rank: Rank) {
         //   Level 4 Conqueror  → badge_conqueror  (eagle wings)
         //   Level 5 Sovereign  → badge_sovereign  (military crown)
         //
-        // The ?: fallback keeps the app from crashing if a rank has no badge yet.
+        // checkNotNull() crashes loudly in testing if a future rank is added to ALL_RANKS
+        // without a badgeResId — better than silently showing a wrong image.
         // ContentScale.Fit: scales the image to fill the 120×120dp frame while maintaining
         // its aspect ratio. clip(CircleShape): masks the image to a circle.
         Image(
-            painter = painterResource(id = rank.badgeResId ?: R.drawable.rank_badge_placeholder),
+            painter = painterResource(id = checkNotNull(rank.badgeResId) { "Rank '${rank.title}' has no badgeResId set" }),
             contentDescription = "Rank badge for ${rank.title}",   // Accessibility label
             contentScale = ContentScale.Fit,                         // Scale to fit within bounds
             modifier = Modifier
