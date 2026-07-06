@@ -9,14 +9,13 @@
  *   the data doesn't have to reload from scratch. The screen just reconnects to the same ViewModel.
  *
  * What does THIS ViewModel do?
- *   Right now it uses hardcoded placeholder data so you can see the screen working immediately.
- *   Later, you'll replace the placeholder data with calls to:
- *     1. Room DAO (local database, for offline-first reads)
- *     2. Supabase repository (for syncing data from the cloud via WorkManager)
+ *   v4: It now loads and saves data using SharedPreferences so XP and daily state
+ *   survive app restarts. It also selects today's mission from MissionRepository
+ *   instead of showing the same hardcoded mission every time.
  *
  * Architecture note:
  *   This follows the MVVM pattern (Model-View-ViewModel):
- *     Model     = DashboardModels.kt (data classes)
+ *     Model     = DashboardModels.kt (data classes) + MissionRepository.kt (mission list)
  *     View      = DashboardScreen.kt (composables)
  *     ViewModel = this file (business logic + state management)
  *
@@ -53,11 +52,43 @@
  *           Called when the user taps "VIEW COMPLETION" on the completed mission card.
  *           Sets isDailyComplete = true, which triggers DashboardScreen to show the
  *           "Come back tomorrow" screen.
+ *
+ *   v4 — PERSISTENCE + MISSION LIBRARY.
+ *
+ *        1. Class changed from ViewModel() to AndroidViewModel(application).
+ *           This gives us access to Application context for SharedPreferences.
+ *           The Compose viewModel() call in DashboardScreen.kt needs NO changes —
+ *           Compose automatically detects AndroidViewModel and passes Application.
+ *
+ *        2. SharedPreferences persistence added. Two keys in "mission_uncomfortable_prefs":
+ *             "total_xp"            → Int    — the user's cumulative XP across all sessions
+ *             "last_completed_date" → String — "yyyy-MM-dd" of the last time they submitted
+ *
+ *        3. `loadPlaceholderData()` replaced by `loadInitialData()`.
+ *           On every cold start it:
+ *             a. Reads saved total_xp from prefs (default 0).
+ *             b. Reads last_completed_date and compares to today.
+ *             c. Gets today's mission from MissionRepository.getMissionForToday().
+ *             d. If user already completed today → mission is COMPLETED, isDailyComplete = true.
+ *             e. Pushes the restored state into LiveData.
+ *
+ *        4. `onSubmitReflection()` now persists:
+ *             Writes new total_xp and today's date to SharedPreferences after XP math.
+ *
+ *        5. `onSwapMission()` now implemented using
+ *             MissionRepository.getAlternateMission(currentMission.id).
+ *
+ *        6. `onRefresh()` now reloads from prefs + MissionRepository instead of placeholder data.
  */
 
 package com.example.missionuncomfortable.ui.dashboard
 
-import androidx.lifecycle.ViewModel  // Base class that gives us lifecycle-awareness and state survival
+import android.app.Application
+import android.content.Context
+import androidx.core.content.edit                  // KTX: enables the `edit { }` lambda on SharedPreferences
+import androidx.lifecycle.AndroidViewModel         // v4: gives us Application context for SharedPreferences
+import com.example.missionuncomfortable.data.MissionRepository
+import java.time.LocalDate
 
 /**
  * DashboardUiState — a single data class that holds EVERYTHING the Dashboard screen needs to display.
@@ -79,8 +110,7 @@ import androidx.lifecycle.ViewModel  // Base class that gives us lifecycle-aware
  * @param isDailyComplete          v3: True once the user has tapped "VIEW COMPLETION" after
  *                                 submitting their discomfort rating for the day's mission.
  *                                 When true, DashboardScreen swaps to the "Come back tomorrow" view.
- *                                 Resets to false the next time loadPlaceholderData() is called
- *                                 (i.e., when a new day's mission is loaded in the future).
+ *                                 Resets to false the next calendar day when loadInitialData() runs.
  */
 data class DashboardUiState(
     val xpProgress: XpProgress? = null,          // Null = not yet loaded
@@ -95,11 +125,32 @@ data class DashboardUiState(
 /**
  * DashboardViewModel — manages the state for DashboardScreen.
  *
- * Extends ViewModel from AndroidX Lifecycle, which gives it:
- *   - Survival across screen rotations (the screen reconnects, data stays)
- *   - A coroutineScope (viewModelScope) for async work (we'll use this when adding Room/Supabase)
+ * v4: Now extends AndroidViewModel so it can access Application context
+ * for reading/writing SharedPreferences without needing a Context from the UI layer.
+ *
+ * The Compose `viewModel()` call in DashboardScreen.kt automatically provides
+ * the Application — no ViewModelProvider.Factory changes needed.
  */
-class DashboardViewModel : ViewModel() {
+class DashboardViewModel(application: Application) : AndroidViewModel(application) {
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // SHARED PREFERENCES
+    // v4: One SharedPreferences file shared across the whole app.
+    // The same file ("mission_uncomfortable_prefs") is used by MainActivity
+    // for the has_seen_welcome flag — keeping all prefs in one place.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private val prefs = application.getSharedPreferences(
+        "mission_uncomfortable_prefs",
+        Context.MODE_PRIVATE
+    )
+
+    // Key constants — defined here to avoid typo-prone magic strings
+    // scattered across the ViewModel's functions.
+    private companion object {
+        const val KEY_TOTAL_XP            = "total_xp"             // Int  — cumulative XP earned
+        const val KEY_LAST_COMPLETED_DATE = "last_completed_date"  // String — "yyyy-MM-dd"
+    }
 
     // ─────────────────────────────────────────────────────────────────────────
     // UI STATE
@@ -121,14 +172,13 @@ class DashboardViewModel : ViewModel() {
     // ─────────────────────────────────────────────────────────────────────────
     // INITIALIZER BLOCK
     // This runs automatically when the ViewModel is first created.
-    // For now it loads placeholder data. Later, replace loadPlaceholderData()
-    // with loadFromRoom() which reads from the local Room database.
+    // v4: Calls loadInitialData() which reads from SharedPreferences
+    // instead of hardcoded placeholder values.
     // ─────────────────────────────────────────────────────────────────────────
 
     init {
-        // Load data immediately when ViewModel is created.
-        // In the future: call loadFromRoom() here instead.
-        loadPlaceholderData()
+        // Load real persisted data on every cold start.
+        loadInitialData()
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -182,66 +232,56 @@ class DashboardViewModel : ViewModel() {
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * loadPlaceholderData — populates the UI state with hardcoded fake data.
+     * loadInitialData — restores persisted state and loads today's mission.
      *
-     * TEMPORARY — replace this entire function once Room DAO is set up.
+     * v4: Replaces the old loadPlaceholderData() function.
      *
-     * The placeholder simulates a Level 2 user who has 350 XP, needs 500 XP to reach Level 3,
-     * and has been assigned a medium-difficulty mission for today.
+     * What it does on every cold start:
+     *   1. Reads `total_xp` from SharedPreferences (default 0 for new users).
+     *   2. Reads `last_completed_date` and compares it to today's date.
+     *      If they match, the user already finished today's mission this session
+     *      or a previous session — we restore the completed/locked state.
+     *   3. Asks MissionRepository.getMissionForToday() for today's mission.
+     *      The repository uses the calendar date as a seed so the same mission
+     *      is shown all day and a new one appears at midnight.
+     *   4. If the user already completed today: the mission status is set to COMPLETED
+     *      and isDailyComplete is set to true → the "Come back tomorrow" screen shows.
+     *   5. Pushes the fully-restored DashboardUiState into LiveData.
      *
-     * v2 update: The Mission now uses `objective` + `rules` instead of a flat `description`,
-     * and `isLocationDependent = true` because the coffee shop mission requires travel.
-     *
-     * v3 update: XP is now calculated via calculateXpProgress() instead of hardcoded — so
-     * even the initial state is consistent with the live XP engine.
+     * Future: replace the SharedPreferences reads with Room DAO calls for richer
+     * history, streak tracking, and multi-device sync via Supabase.
      */
-    private fun loadPlaceholderData() {
+    private fun loadInitialData() {
+        // ── STEP 1: Read persisted XP ─────────────────────────────────────
+        // getInt returns the default (0) if the key has never been written —
+        // i.e., this is a brand-new user with no XP yet.
+        val savedXp = prefs.getInt(KEY_TOTAL_XP, 0)
 
-        // v3: Use the XP helper so placeholder data goes through the same rank-calculation
-        // logic as live data. Starting XP = 350. The helper will resolve this to Level 2.
-        val xpProgress = calculateXpProgress(totalXp = 350)
+        // ── STEP 2: Check if today's mission is already done ──────────────
+        // getString returns "" if the key has never been written.
+        val lastCompletedDate = prefs.getString(KEY_LAST_COMPLETED_DATE, "") ?: ""
+        val todayString = LocalDate.now().toString()   // "yyyy-MM-dd"
+        val alreadyCompletedToday = (lastCompletedDate == todayString)
 
-        // Build a placeholder mission representing "today's challenge".
-        // v2: Uses the new `objective` + `rules` format instead of a flat `description`.
-        // The coffee shop mission is location-dependent (requires travelling to a coffee shop or
-        // public space), so `isLocationDependent = true` — this shows the "Swap Mission" button.
-        val todaysMission = Mission(
-            id = "placeholder-mission-001",                   // Fake ID — real ones will come from Supabase
-
-            title = "The Silent Stranger",                    // Short catchy mission name
-
-            // OBJECTIVE: A single clear sentence stating what the user must do.
-            // This is displayed under the "OBJECTIVE" header in the military briefing format.
-            objective = "Go to a coffee shop or public space alone and sit in silence without your phone.",
-
-            // RULES: An ordered list of specific constraints the user must follow.
-            // Each string becomes a numbered rule in the briefing card.
-            // Keep each rule concise — one action or constraint per item.
-            rules = listOf(
-                "Remain seated for a minimum of 15 minutes.",
-                "Your phone must stay in your pocket or bag.",
-                "Observe your surroundings. Make eye contact if it happens naturally.",
-                "Submit your discomfort rating before you leave."
-            ),
-
-            xpReward = 75,                                   // Completing this earns 75 XP
-            status = MissionStatus.ACTIVE,                   // The mission is currently active
-            difficulty = 2,                                  // Difficulty 2/5 — suitable for Level 2
-            dateAssigned = "2026-07-05",                     // Today's date (hardcoded for placeholder)
-            isLocationDependent = true,                      // TRUE — user must travel to a coffee shop
-            discomfortRating = null                          // Not yet submitted — user hasn't done it yet
+        // ── STEP 3: Get today's mission from the repository ───────────────
+        // getMissionForToday() uses the epoch day as a seed — deterministic per day.
+        // We override the status if the user has already completed it.
+        val todaysMission = MissionRepository.getMissionForToday().copy(
+            status = if (alreadyCompletedToday) MissionStatus.COMPLETED else MissionStatus.ACTIVE
         )
 
-        // Push the loaded data into the UI state.
-        // Setting isLoading = false tells the screen to stop showing a spinner.
+        // ── STEP 4: Calculate rank + bar fraction from restored XP ────────
+        val xpProgress = calculateXpProgress(totalXp = savedXp)
+
+        // ── STEP 5: Push restored state into LiveData ─────────────────────
         _uiState.value = DashboardUiState(
-            xpProgress = xpProgress,           // Calculated via calculateXpProgress(350)
-            todaysMission = todaysMission,      // The mission we just built
-            isLoading = false,                 // Done loading — hide any spinner/shimmer
-            errorMessage = null,              // No error occurred
-            showReflectionSlider = false,      // Slider hidden until user taps "ACCEPT THE MISSION"
-            currentDiscomfortRating = 5,       // Default slider position at the midpoint
-            isDailyComplete = false           // Not yet complete — user still needs to do the mission
+            xpProgress = xpProgress,
+            todaysMission = todaysMission,
+            isLoading = false,                // Done loading — hide spinner
+            errorMessage = null,              // No error
+            showReflectionSlider = false,     // Slider hidden by default
+            currentDiscomfortRating = 5,      // Default slider midpoint
+            isDailyComplete = alreadyCompletedToday  // Restore "Come back tomorrow" if needed
         )
     }
 
@@ -292,21 +332,30 @@ class DashboardViewModel : ViewModel() {
      * It replaces today's mission with an alternative that does NOT require travel —
      * for example, if the user is housebound, stuck at work, or simply cannot reach the location.
      *
-     * In the future, this will:
-     *   1. Request an alternative non-location-dependent mission from Supabase.
-     *   2. Store the swap event in Room (so the user can't swap infinitely).
-     *   3. A user should only get one free swap per day — enforce this in the ViewModel later.
+     * v4: Now implemented using MissionRepository.getAlternateMission().
+     * The alternate mission is random but will never repeat the current one.
+     *
+     * Future work:
+     *   - A user should only get one free swap per day — enforce a swap-count limit here.
+     *   - Store the swap event in Room so the limit survives app restarts.
      */
     fun onSwapMission() {
-        // TODO: Request alternative mission from Supabase
-        // TODO: Update Room with the new mission, mark old mission as swapped
-        // TODO: Update _uiState with the new mission object
+        val currentState = _uiState.value ?: return
+        val currentMission = currentState.todaysMission ?: return
 
-        // For now, this is a no-op stub.
-        // When you implement this:
-        //   1. Set isLoading = true so the user sees a brief spinner.
-        //   2. Fetch an alternative mission from your repository layer.
-        //   3. Update _uiState with the new mission.
+        // Get a random alternate mission that is not the one currently showing.
+        // The alternate has dateAssigned stamped with today's date.
+        val alternateMission = MissionRepository.getAlternateMission(currentMission.id)
+
+        // Replace today's mission in state.
+        // Reset showReflectionSlider in case the user had already tapped ACCEPT on the old mission.
+        _uiState.value = currentState.copy(
+            todaysMission = alternateMission,
+            showReflectionSlider = false  // Reset slider state for the new mission
+        )
+
+        // TODO: Room — record the swap event; enforce one-swap-per-day limit
+        // TODO: Supabase sync via WorkManager
     }
 
     /**
@@ -331,7 +380,7 @@ class DashboardViewModel : ViewModel() {
     /**
      * onSubmitReflection — called when the user taps "SUBMIT RATING" after positioning the slider.
      *
-     * v3: This function now does REAL XP MATH:
+     * v3: This function does REAL XP MATH:
      *   1. Reads the mission's xpReward.
      *   2. Adds it to the user's current total XP.
      *   3. Calls calculateXpProgress(newTotalXp) to recalculate rank + bar fraction.
@@ -343,10 +392,8 @@ class DashboardViewModel : ViewModel() {
      *   5. Marks the mission COMPLETED and stores the discomfort rating.
      *   6. Hides the slider.
      *
-     * Future work:
-     *   - Write the rating + COMPLETED status to Room.
-     *   - Trigger a Supabase sync via WorkManager.
-     *   - Persist the updated XP total to Room (UserProfile table or equivalent).
+     * v4: Also persists XP and today's date to SharedPreferences so progress
+     * survives app restarts. The date lock prevents double-completing today's mission.
      */
     fun onSubmitReflection() {
         // Get the current state snapshot — bail out safely if state is null
@@ -373,7 +420,27 @@ class DashboardViewModel : ViewModel() {
             discomfortRating = rating           // Store the user's 1–10 discomfort rating
         )
 
-        // ── STEP 4: Push updated state ────────────────────────────────────
+        // ── STEP 4: Persist new XP and today's date to SharedPreferences ──
+        // v4: This is the critical addition — without this the XP resets on every app restart.
+        //
+        // putInt("total_xp", newTotalXp):
+        //   Saves the user's cumulative XP so it survives app kills and restarts.
+        //
+        // putString("last_completed_date", today):
+        //   Stamps today's date so loadInitialData() can detect on next cold start
+        //   that the user already completed today's mission and should see the
+        //   "Come back tomorrow" screen instead of a fresh mission.
+        //
+        // KTX `edit { }` lambda (from androidx.core.content.edit):
+        //   More idiomatic than the old .edit().put___().apply() chain.
+        //   Applies changes asynchronously in the background (same as .apply()).
+        val todayString = LocalDate.now().toString()
+        prefs.edit {
+            putInt(KEY_TOTAL_XP, newTotalXp)
+            putString(KEY_LAST_COMPLETED_DATE, todayString)
+        }
+
+        // ── STEP 5: Push updated state ────────────────────────────────────
         // - newXpProgress contains the incremented XP + any rank change.
         //   The animateFloatAsState() in XpProgressSection reads progressFraction from this
         //   and will smoothly animate the bar from the old fraction to the new one.
@@ -387,7 +454,6 @@ class DashboardViewModel : ViewModel() {
         )
 
         // TODO: Room — update MissionAttempt record with status=COMPLETED and discomfortRating=rating
-        // TODO: Room — write newTotalXp to the UserProfile table (or equivalent) to persist XP
         // TODO: WorkManager — trigger Supabase sync for the completed mission + updated XP
     }
 
@@ -421,19 +487,24 @@ class DashboardViewModel : ViewModel() {
     /**
      * onRefresh — called if the user pull-to-refreshes the screen.
      *
-     * In the future, this will trigger a sync with Supabase (if online)
+     * v4: Now reloads from SharedPreferences + MissionRepository instead of placeholder data.
+     * This correctly restores the user's real XP and today's mission state.
+     *
+     * In the future, this will also trigger a sync with Supabase (if online)
      * and reload data from Room (always available offline).
      */
     fun onRefresh() {
+        // Show loading spinner briefly while we reload
+        _uiState.value = _uiState.value?.copy(isLoading = true)
+
+        // Reload from SharedPreferences + MissionRepository
+        loadInitialData()
+
         // TODO: Trigger WorkManager sync + reload from Room
         // Example future code:
         //   viewModelScope.launch {
         //       syncWithSupabase()       // WorkManager one-time sync request
         //       loadFromRoom()           // Reload fresh data from local Room DB
         //   }
-
-        // For now, just reload the placeholder data again
-        _uiState.value = _uiState.value?.copy(isLoading = true) // Show loading briefly
-        loadPlaceholderData()
     }
 }

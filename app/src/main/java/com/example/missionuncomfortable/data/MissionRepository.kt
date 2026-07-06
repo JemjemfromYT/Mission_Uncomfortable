@@ -1,0 +1,217 @@
+// ============================================================
+// FILE: app/src/main/java/com/example/missionuncomfortable/data/MissionRepository.kt
+//
+// NEW FILE — create the `data` package directory if it doesn't exist.
+// Full path: app/src/main/java/com/example/missionuncomfortable/data/
+//
+// PURPOSE: Single source of truth for all available missions.
+//
+//   - Holds a curated list of 7 Uncomfortable Missions.
+//     Each Mission uses the exact same data class as DashboardModels.kt —
+//     all required fields are populated (id, title, objective, rules,
+//     xpReward, status, difficulty, dateAssigned, isLocationDependent).
+//
+//   - getMissionForToday() uses the calendar day as a deterministic seed:
+//       same mission is shown all day, a new one appears at midnight.
+//       With 7 missions, the full rotation takes 7 days.
+//
+//   - getAlternateMission() is wired to the SWAP MISSION button.
+//     It returns a random mission that is NOT the one currently on screen.
+//
+// NOTE: `dateAssigned` in the library missions is set to "" as a placeholder.
+//       getMissionForToday() stamps today's real date on the returned mission
+//       via .copy(dateAssigned = ...) so it is always accurate.
+// ============================================================
+
+package com.example.missionuncomfortable.data
+
+import com.example.missionuncomfortable.ui.dashboard.Mission
+import com.example.missionuncomfortable.ui.dashboard.MissionStatus
+import java.time.LocalDate
+
+object MissionRepository {
+
+    // --------------------------------------------------------
+    // THE MISSION LIBRARY
+    //
+    // To add a new mission: append it to this list.
+    // Thresholds and rank math live in DashboardModels.ALL_RANKS —
+    // nothing here needs updating when ranks change.
+    //
+    // Field reference (matches DashboardModels.Mission exactly):
+    //   id               — unique stable string identifier
+    //   title            — short display name shown on the card
+    //   objective        — single-sentence OBJECTIVE block
+    //   rules            — ordered RULES list (numbered in UI)
+    //   xpReward         — XP granted on completion
+    //   status           — always ACTIVE here; ViewModel overrides if needed
+    //   difficulty       — 1–5 scale shown as dots on the card footer
+    //   dateAssigned     — "" here; getMissionForToday() stamps today's date
+    //   isLocationDependent — true = user must travel; shows SWAP MISSION button
+    //   discomfortRating — always null here; user fills it in after completion
+    // --------------------------------------------------------
+    private val ALL_MISSIONS = listOf(
+
+        Mission(
+            id = "silent_stranger",
+            title = "The Silent Stranger",
+            objective = "Go to a coffee shop or public space alone and sit in silence without your phone.",
+            rules = listOf(
+                "Remain seated for a minimum of 15 minutes.",
+                "Your phone must stay in your pocket or bag.",
+                "Observe your surroundings. Make eye contact if it happens naturally.",
+                "Submit your discomfort rating before you leave."
+            ),
+            xpReward = 75,
+            status = MissionStatus.ACTIVE,
+            difficulty = 2,
+            dateAssigned = "",         // Stamped with today's date by getMissionForToday()
+            isLocationDependent = true // Requires travelling to a coffee shop or public space
+        ),
+
+        Mission(
+            id = "cold_open",
+            title = "The Cold Open",
+            objective = "Strike up a genuine conversation with a complete stranger — not a service worker.",
+            rules = listOf(
+                "The conversation must last at least 60 seconds.",
+                "You must introduce yourself by name.",
+                "No phones, no excuses — initiate in person.",
+                "Submit your discomfort rating immediately after."
+            ),
+            xpReward = 100,
+            status = MissionStatus.ACTIVE,
+            difficulty = 3,
+            dateAssigned = "",
+            isLocationDependent = true  // Requires being somewhere with strangers
+        ),
+
+        Mission(
+            id = "the_volunteer",
+            title = "The Volunteer",
+            objective = "Raise your hand and volunteer for something you would normally avoid today.",
+            rules = listOf(
+                "Must be a real, public act of volunteering (meeting, class, or group).",
+                "You cannot prepare a script in advance.",
+                "Accept the outcome, whatever it is.",
+                "Submit your discomfort rating within 10 minutes of completing."
+            ),
+            xpReward = 100,
+            status = MissionStatus.ACTIVE,
+            difficulty = 3,
+            dateAssigned = "",
+            isLocationDependent = false // Can happen anywhere — work, school, online
+        ),
+
+        Mission(
+            id = "the_mirror",
+            title = "The Mirror",
+            objective = "Record a 60-second video of yourself speaking about your goals out loud. Watch it back.",
+            rules = listOf(
+                "No re-takes — the first recording is final.",
+                "You must watch the full video back before submitting.",
+                "Speak about at least one goal you have never told anyone.",
+                "Delete or keep the video — your choice."
+            ),
+            xpReward = 75,
+            status = MissionStatus.ACTIVE,
+            difficulty = 2,
+            dateAssigned = "",
+            isLocationDependent = false // Done at home — no travel required
+        ),
+
+        Mission(
+            id = "hold_the_door",
+            title = "Hold the Door",
+            objective = "Perform five deliberate, visible acts of kindness for strangers today.",
+            rules = listOf(
+                "Each act must involve direct eye contact and a verbal acknowledgment.",
+                "Acts must be spread across at least 3 different locations.",
+                "Do not announce that you are doing a challenge.",
+                "Submit your discomfort rating after all five acts are complete."
+            ),
+            xpReward = 50,
+            status = MissionStatus.ACTIVE,
+            difficulty = 1,
+            dateAssigned = "",
+            isLocationDependent = true  // Requires going out to find strangers
+        ),
+
+        Mission(
+            id = "the_refusal",
+            title = "The Refusal",
+            objective = "Say 'no' firmly and without apology to the next request you would normally reluctantly agree to.",
+            rules = listOf(
+                "The refusal must be spoken aloud — no text messages.",
+                "You may not over-explain or apologize excessively.",
+                "If no opportunity arises naturally, create one by making a small request of someone else.",
+                "Submit your discomfort rating within 30 minutes."
+            ),
+            xpReward = 75,
+            status = MissionStatus.ACTIVE,
+            difficulty = 2,
+            dateAssigned = "",
+            isLocationDependent = false // Can happen at work, home, or anywhere
+        ),
+
+        Mission(
+            id = "cold_exposure",
+            title = "Cold Exposure",
+            objective = "End your shower with two full minutes of cold water. No warming back up.",
+            rules = listOf(
+                "Cold phase must be the final phase — no warm water afterward.",
+                "Minimum duration: 2 minutes of cold water.",
+                "Keep your breathing controlled — no panicked gasping.",
+                "Submit your discomfort rating immediately after drying off."
+            ),
+            xpReward = 100,
+            status = MissionStatus.ACTIVE,
+            difficulty = 3,
+            dateAssigned = "",
+            isLocationDependent = false // Done at home
+        )
+    )
+
+    // --------------------------------------------------------
+    // getMissionForToday()
+    //
+    // Uses LocalDate.now().toEpochDay() as a deterministic index
+    // into the mission list. This means:
+    //   - The same mission is shown all day long (stable per device clock).
+    //   - A new mission appears at midnight when the date changes.
+    //   - With 7 missions, the rotation repeats every 7 days.
+    //
+    // The returned mission has `dateAssigned` stamped with today's
+    // real date string (yyyy-MM-dd) so the data is always accurate.
+    //
+    // The +size guard (% size + size) % size handles dates before
+    // 1970-01-01 which produce a negative epoch day — purely defensive.
+    // --------------------------------------------------------
+    fun getMissionForToday(): Mission {
+        val epochDay = LocalDate.now().toEpochDay()
+        val rawIndex = (epochDay % ALL_MISSIONS.size).toInt()
+        val safeIndex = ((rawIndex % ALL_MISSIONS.size) + ALL_MISSIONS.size) % ALL_MISSIONS.size
+        return ALL_MISSIONS[safeIndex].copy(
+            dateAssigned = LocalDate.now().toString()   // Stamp today's real date
+        )
+    }
+
+    // --------------------------------------------------------
+    // getAlternateMission()
+    //
+    // Returns a random mission that is NOT the one currently
+    // displayed (identified by its id). Called from
+    // DashboardViewModel.onSwapMission().
+    //
+    // The returned mission also has dateAssigned stamped with today.
+    //
+    // With 7 missions, candidates always has at least 6 items —
+    // .random() will never throw on an empty list here.
+    // --------------------------------------------------------
+    fun getAlternateMission(currentMissionId: String): Mission {
+        val candidates = ALL_MISSIONS.filter { it.id != currentMissionId }
+        return candidates.random().copy(
+            dateAssigned = LocalDate.now().toString()   // Stamp today's real date
+        )
+    }
+}

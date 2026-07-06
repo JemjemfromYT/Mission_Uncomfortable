@@ -46,6 +46,15 @@
  *   v2 — Added first-time user detection via SharedPreferences.
  *        Added WelcomeScreen composable as the intro destination.
  *        DashboardScreen is now the second screen, reached after onboarding.
+ *
+ *   v3 — Fixed Android Studio warning: "Use the KTX extension function
+ *        SharedPreferences.edit instead?"
+ *        Replaced the old chained form:
+ *          prefs.edit().putBoolean(KEY_HAS_SEEN_WELCOME, true).apply()
+ *        with the KTX lambda form:
+ *          prefs.edit { putBoolean(KEY_HAS_SEEN_WELCOME, true) }
+ *        Added import androidx.core.content.edit to support the KTX lambda.
+ *        No logic changes — behaviour is identical.
  */
 
 package com.example.missionuncomfortable
@@ -63,6 +72,7 @@ import androidx.compose.runtime.mutableStateOf              // Creates observabl
 import androidx.compose.runtime.remember                    // Keeps state alive across recompositions
 import androidx.compose.runtime.setValue                    // Property delegate for Compose State (used with 'by')
 import androidx.compose.ui.graphics.Color                   // Colour class for the theme palette
+import androidx.core.content.edit                           // v3: KTX extension — enables `edit { }` lambda form
 import com.example.missionuncomfortable.ui.dashboard.DashboardScreen  // The main dashboard composable
 import com.example.missionuncomfortable.ui.welcome.WelcomeScreen      // The first-launch intro composable
 
@@ -91,6 +101,9 @@ class MainActivity : ComponentActivity() {
     // typo-prone magic strings scattered across the codebase.
     companion object {
         // Name of the SharedPreferences file — scoped to this app.
+        // NOTE: DashboardViewModel (v4) also opens this same file to read/write
+        // total_xp and last_completed_date. Keeping one file name means all prefs
+        // are in one place and easy to inspect during debugging.
         private const val PREFS_NAME = "mission_uncomfortable_prefs"
 
         // Key for the "has the user seen the welcome screen?" flag.
@@ -142,12 +155,13 @@ class MainActivity : ComponentActivity() {
                     //   2. Flip showDashboard to true — Compose re-routes to DashboardScreen.
                     WelcomeScreen(
                         onStartJourney = {
-                            // Persist the flag immediately so the choice survives app restarts.
-                            // .apply() writes asynchronously in the background — preferred over
-                            // .commit() (which blocks the main thread) for SharedPreferences writes.
-                            prefs.edit()
-                                .putBoolean(KEY_HAS_SEEN_WELCOME, true)
-                                .apply()
+                            // v3: KTX `edit { }` lambda form — identical behaviour to the old
+                            // .edit().putBoolean(...).apply() chain, but removes the Android
+                            // Studio warning: "Use the KTX extension function SharedPreferences.edit".
+                            // Applies changes asynchronously in the background (non-blocking).
+                            prefs.edit {
+                                putBoolean(KEY_HAS_SEEN_WELCOME, true)
+                            }
 
                             // Flip the routing state — triggers recomposition → DashboardScreen shown.
                             showDashboard = true
