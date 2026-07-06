@@ -413,8 +413,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
      *   1. Reads the mission's xpReward.
      *   2. Adds it to the user's current total XP.
      *   3. Calls calculateXpProgress(newTotalXp) to recalculate rank + bar fraction.
-     *      If the new XP crosses a rank threshold, calculateXpProgress() returns the
-     *      new rank automatically — no special rank-up code needed here.
+     *      If the new XP crosses a rank threshold (e.g., 350+200=550 crosses Level 3 at 500),
+     *      the returned XpProgress will contain the NEW rank — automatic rank-up, no extra code.
      *   4. Pushes the updated XpProgress into state.
      *      The animateFloatAsState() in XpProgressSection will smoothly animate the bar
      *      to the new fraction — this is where the progress bar animation happens.
