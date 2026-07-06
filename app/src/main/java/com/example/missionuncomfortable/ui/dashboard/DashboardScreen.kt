@@ -128,7 +128,6 @@ import androidx.compose.ui.unit.dp                                 // Density-in
 import androidx.compose.ui.unit.sp                                 // Scale-independent pixels for font sizes
 import androidx.compose.runtime.livedata.observeAsState            // Bridges LiveData → Compose State
 import androidx.lifecycle.viewmodel.compose.viewModel              // Gets or creates a ViewModel scoped to this composable
-import com.example.missionuncomfortable.R                          // App resource references (R.drawable.badge_*)
 import kotlin.math.roundToInt                                      // Accurate Float-to-Int rounding for the discomfort slider
 
 // ─── COLOUR CONSTANTS ────────────────────────────────────────────────────────
