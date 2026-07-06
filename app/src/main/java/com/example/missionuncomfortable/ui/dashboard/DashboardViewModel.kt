@@ -16,8 +16,8 @@
  *
  * Architecture note:
  *   This follows the MVVM pattern (Model-View-ViewModel):
- *     Model  = DashboardModels.kt (data classes)
- *     View   = DashboardScreen.kt (composables)
+ *     Model     = DashboardModels.kt (data classes)
+ *     View      = DashboardScreen.kt (composables)
  *     ViewModel = this file (business logic + state management)
  *
  * ─── CHANGELOG ────────────────────────────────────────────────────────────────
@@ -31,6 +31,28 @@
  *        Added `onSwapMission()` — stub for swapping a location-dependent mission.
  *        Added `onDiscomfortRatingChanged(rating)` — called as the slider moves.
  *        Added `onSubmitReflection()` — called when the user submits their discomfort rating.
+ *
+ *   v3 — LIVE XP ENGINE. Three major additions:
+ *
+ *        1. `isDailyComplete: Boolean` added to DashboardUiState.
+ *           When true, the screen transitions to the "Come back tomorrow" completion view.
+ *           Set by onViewCompletion() after the user taps "VIEW COMPLETION".
+ *
+ *        2. `onSubmitReflection()` now does REAL XP MATH:
+ *           - Reads the mission's xpReward from state.
+ *           - Adds it to the user's current total XP.
+ *           - Calls calculateXpProgress(newTotalXp) to compute the new rank + bar position.
+ *           - Pushes the updated XpProgress into state so the animated progress bar reacts.
+ *
+ *        3. `calculateXpProgress(totalXp)` — new private helper.
+ *           Walks ALL_RANKS (defined in DashboardModels) to find the correct rank for any
+ *           XP total. Returns a fully-populated XpProgress object ready for the UI.
+ *           This means rank-ups happen automatically — no if/else chains needed here.
+ *
+ *        4. `onViewCompletion()` — new function.
+ *           Called when the user taps "VIEW COMPLETION" on the completed mission card.
+ *           Sets isDailyComplete = true, which triggers DashboardScreen to show the
+ *           "Come back tomorrow" screen.
  */
 
 package com.example.missionuncomfortable.ui.dashboard
@@ -54,6 +76,11 @@ import androidx.lifecycle.ViewModel  // Base class that gives us lifecycle-aware
  * @param currentDiscomfortRating  The live value of the discomfort slider (1–10).
  *                                 Defaults to 5 (the midpoint). Updated as the slider moves.
  *                                 This is persisted to Mission.discomfortRating on submission.
+ * @param isDailyComplete          v3: True once the user has tapped "VIEW COMPLETION" after
+ *                                 submitting their discomfort rating for the day's mission.
+ *                                 When true, DashboardScreen swaps to the "Come back tomorrow" view.
+ *                                 Resets to false the next time loadPlaceholderData() is called
+ *                                 (i.e., when a new day's mission is loaded in the future).
  */
 data class DashboardUiState(
     val xpProgress: XpProgress? = null,          // Null = not yet loaded
@@ -61,7 +88,8 @@ data class DashboardUiState(
     val isLoading: Boolean = true,                // Start in loading state by default
     val errorMessage: String? = null,            // Null = no error
     val showReflectionSlider: Boolean = false,   // False = slider hidden; true = slider visible
-    val currentDiscomfortRating: Int = 5         // Default slider position = 5 (middle of 1–10)
+    val currentDiscomfortRating: Int = 5,        // Default slider position = 5 (middle of 1–10)
+    val isDailyComplete: Boolean = false         // v3: True = show "Come back tomorrow" screen
 )
 
 /**
@@ -75,11 +103,10 @@ class DashboardViewModel : ViewModel() {
 
     // ─────────────────────────────────────────────────────────────────────────
     // UI STATE
-    // MutableStateFlow holds a value that can change over time.
-    // Compose will automatically re-draw any UI that reads from this flow
-    // whenever the value changes.
+    // MutableLiveData holds a value that can change over time.
+    // Compose bridges LiveData → State via observeAsState() in DashboardScreen.
     //
-    // We expose it as a read-only StateFlow to the screen — only the ViewModel
+    // We expose it as a read-only LiveData to the screen — only the ViewModel
     // can change the value. The screen can only READ it.
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -105,6 +132,52 @@ class DashboardViewModel : ViewModel() {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // PRIVATE HELPER — XP & RANK CALCULATION
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * calculateXpProgress — converts a raw total-XP number into a full XpProgress object.
+     *
+     * This is the core of the XP engine. It walks ALL_RANKS (defined in DashboardModels)
+     * to find the correct current rank and the correct next-rank threshold for any XP value.
+     * Because it reads thresholds directly from ALL_RANKS, rank-ups are automatic —
+     * there is no if/else chain here that needs updating when rank thresholds change.
+     *
+     * How it works:
+     *   1. Find the highest rank whose xpThreshold is still <= totalXp.
+     *      That is the user's current rank.
+     *      (e.g., totalXp=425 → thresholds 0, 200 both qualify → highest is Level 2)
+     *   2. Find the rank at level + 1 — that is the next rank to reach.
+     *   3. If the user is at the max rank (Level 5), use the user's own XP as the "next" threshold
+     *      so the progress bar shows 100% full.
+     *
+     * @param totalXp  The user's total earned XP after the latest change.
+     * @return         A fully-populated XpProgress object ready to hand to the UI.
+     */
+    private fun calculateXpProgress(totalXp: Int): XpProgress {
+        // Walk ALL_RANKS from highest to lowest to find the current rank.
+        // lastOrNull { condition } returns the last element that satisfies the condition —
+        // since ALL_RANKS is ordered by ascending xpThreshold, this gives us the highest
+        // qualifying rank without any manual sorting.
+        val currentRank = ALL_RANKS.lastOrNull { rank ->
+            rank.xpThreshold <= totalXp
+        } ?: ALL_RANKS.first()  // Safety fallback: if somehow no rank qualifies, use Level 1
+
+        // Find the next rank — the one with level = currentRank.level + 1.
+        // null means the user is at max rank (Level 5) — there is no next rank.
+        val nextRank = ALL_RANKS.find { rank -> rank.level == currentRank.level + 1 }
+
+        return XpProgress(
+            currentXp = totalXp,
+            xpForCurrentRank = currentRank.xpThreshold,   // Bottom of the current rank's XP band
+            // If max rank, use totalXp as the ceiling so progressFraction = 1.0 (full bar).
+            // Otherwise use the next rank's threshold as the ceiling.
+            xpForNextRank = nextRank?.xpThreshold ?: totalXp,
+            currentRank = currentRank
+        )
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // DATA LOADING
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -118,22 +191,15 @@ class DashboardViewModel : ViewModel() {
      *
      * v2 update: The Mission now uses `objective` + `rules` instead of a flat `description`,
      * and `isLocationDependent = true` because the coffee shop mission requires travel.
+     *
+     * v3 update: XP is now calculated via calculateXpProgress() instead of hardcoded — so
+     * even the initial state is consistent with the live XP engine.
      */
     private fun loadPlaceholderData() {
 
-        // Grab the Level 2 rank from our rank registry defined in DashboardModels.kt
-        // ALL_RANKS is a List<Rank>, indices start at 0, so index 1 = Level 2
-        val currentRank = ALL_RANKS[1]  // "The Initiate" (Level 2)
-
-        // Build the XP progress object for a Level 2 user
-        // Level 2 starts at 200 XP, Level 3 starts at 500 XP.
-        // The user currently has 350 XP, so they're 150/300 = 50% through Level 2.
-        val xpProgress = XpProgress(
-            currentXp = 350,            // The user has earned 350 total XP
-            xpForCurrentRank = 200,     // Level 2 begins at 200 XP
-            xpForNextRank = 500,        // Level 3 begins at 500 XP
-            currentRank = currentRank   // The Rank object for Level 2
-        )
+        // v3: Use the XP helper so placeholder data goes through the same rank-calculation
+        // logic as live data. Starting XP = 350. The helper will resolve this to Level 2.
+        val xpProgress = calculateXpProgress(totalXp = 350)
 
         // Build a placeholder mission representing "today's challenge".
         // v2: Uses the new `objective` + `rules` format instead of a flat `description`.
@@ -169,19 +235,19 @@ class DashboardViewModel : ViewModel() {
         // Push the loaded data into the UI state.
         // Setting isLoading = false tells the screen to stop showing a spinner.
         _uiState.value = DashboardUiState(
-            xpProgress = xpProgress,           // The XP/rank data we just built
+            xpProgress = xpProgress,           // Calculated via calculateXpProgress(350)
             todaysMission = todaysMission,      // The mission we just built
             isLoading = false,                 // Done loading — hide any spinner/shimmer
             errorMessage = null,              // No error occurred
             showReflectionSlider = false,      // Slider hidden until user taps "ACCEPT THE MISSION"
-            currentDiscomfortRating = 5        // Default slider position at the midpoint
+            currentDiscomfortRating = 5,       // Default slider position at the midpoint
+            isDailyComplete = false           // Not yet complete — user still needs to do the mission
         )
     }
 
     // ─────────────────────────────────────────────────────────────────────────
     // USER ACTIONS
     // These functions are called by the UI when the user does something.
-    // Right now they're stubs — add the real Room/Supabase logic later.
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
@@ -265,35 +331,91 @@ class DashboardViewModel : ViewModel() {
     /**
      * onSubmitReflection — called when the user taps "SUBMIT RATING" after positioning the slider.
      *
-     * Records the discomfort rating on the mission and marks the mission as COMPLETED.
-     * Hides the slider now that the rating has been submitted.
+     * v3: This function now does REAL XP MATH:
+     *   1. Reads the mission's xpReward.
+     *   2. Adds it to the user's current total XP.
+     *   3. Calls calculateXpProgress(newTotalXp) to recalculate rank + bar fraction.
+     *      If the new XP crosses a rank threshold, calculateXpProgress() returns the
+     *      new rank automatically — no special rank-up code needed here.
+     *   4. Pushes the updated XpProgress into state.
+     *      The animateFloatAsState() in XpProgressSection will smoothly animate the bar
+     *      to the new fraction — this is where the progress bar animation happens.
+     *   5. Marks the mission COMPLETED and stores the discomfort rating.
+     *   6. Hides the slider.
      *
-     * In the future, this will:
-     *   1. Write the rating + COMPLETED status to the Room database.
-     *   2. Trigger a Supabase sync via WorkManager to persist the result to the cloud.
-     *   3. Award the mission's XP to the user's total (update XpProgress in Room).
+     * Future work:
+     *   - Write the rating + COMPLETED status to Room.
+     *   - Trigger a Supabase sync via WorkManager.
+     *   - Persist the updated XP total to Room (UserProfile table or equivalent).
      */
     fun onSubmitReflection() {
         // Get the current state snapshot — bail out safely if state is null
         val currentState = _uiState.value ?: return
         val rating = currentState.currentDiscomfortRating
+        val mission = currentState.todaysMission ?: return          // Need a mission to complete
+        val currentXpProgress = currentState.xpProgress ?: return  // Need current XP to add to
 
-        // Build the updated mission with the submitted rating and COMPLETED status.
-        // We use copy() so all other mission fields (title, rules, xpReward, etc.) stay intact.
-        val updatedMission = currentState.todaysMission?.copy(
+        // ── STEP 1: Calculate new total XP ────────────────────────────────
+        // Add the mission's XP reward to the user's existing total.
+        // e.g., 350 (current) + 75 (reward) = 425 (new total)
+        val newTotalXp = currentXpProgress.currentXp + mission.xpReward
+
+        // ── STEP 2: Recalculate rank for the new XP total ─────────────────
+        // calculateXpProgress() walks ALL_RANKS to find the correct rank and bar fraction.
+        // If newTotalXp crosses a rank threshold (e.g., 350+200=550 crosses Level 3 at 500),
+        // the returned XpProgress will contain the NEW rank — automatic rank-up, no extra code.
+        val newXpProgress = calculateXpProgress(totalXp = newTotalXp)
+
+        // ── STEP 3: Update the mission to COMPLETED with the user's rating ─
+        // copy() keeps all other mission fields intact — only status and rating change.
+        val updatedMission = mission.copy(
             status = MissionStatus.COMPLETED,   // Mission is now done
-            discomfortRating = rating           // Store the user's 1–10 rating
+            discomfortRating = rating           // Store the user's 1–10 discomfort rating
         )
 
-        // Push the new state: hide the slider, mark mission complete, store rating
+        // ── STEP 4: Push updated state ────────────────────────────────────
+        // - newXpProgress contains the incremented XP + any rank change.
+        //   The animateFloatAsState() in XpProgressSection reads progressFraction from this
+        //   and will smoothly animate the bar from the old fraction to the new one.
+        // - showReflectionSlider = false hides the slider now that the rating is recorded.
+        // - isDailyComplete stays false here — the user still sees the COMPLETED card
+        //   and "VIEW COMPLETION" button. isDailyComplete flips when they tap that button.
         _uiState.value = currentState.copy(
-            todaysMission = updatedMission,     // Updated mission with COMPLETED + rating
-            showReflectionSlider = false        // Hide the slider — rating has been submitted
+            xpProgress = newXpProgress,          // Updated XP — triggers animated bar fill
+            todaysMission = updatedMission,      // COMPLETED status + discomfort rating stored
+            showReflectionSlider = false         // Hide the slider — rating has been submitted
         )
 
-        // TODO: Room — update MissionAttempt with status=COMPLETED and discomfortRating=rating
-        // TODO: Room — increment user's total XP by mission.xpReward
-        // TODO: WorkManager — trigger Supabase sync for the completed mission
+        // TODO: Room — update MissionAttempt record with status=COMPLETED and discomfortRating=rating
+        // TODO: Room — write newTotalXp to the UserProfile table (or equivalent) to persist XP
+        // TODO: WorkManager — trigger Supabase sync for the completed mission + updated XP
+    }
+
+    /**
+     * onViewCompletion — called when the user taps "VIEW COMPLETION" on the COMPLETED mission card.
+     *
+     * v3: NEW FUNCTION.
+     *
+     * At this point the mission is already marked COMPLETED and XP has already been added
+     * (that happened in onSubmitReflection). This function is purely a UI transition:
+     * it sets isDailyComplete = true, which causes DashboardScreen to swap from the
+     * mission card view to the "Come back tomorrow" screen.
+     *
+     * The "Come back tomorrow" screen still shows the updated XP progress bar so the user
+     * gets a final satisfying look at their new total before the app goes quiet for the day.
+     *
+     * In the future, this could also:
+     *   - Navigate to a "Mission Complete" summary screen with the discomfort rating + streak count.
+     *   - Trigger a local notification to remind the user about tomorrow's mission.
+     */
+    fun onViewCompletion() {
+        // Flip isDailyComplete → DashboardScreen transitions to the completion view.
+        _uiState.value = _uiState.value?.copy(
+            isDailyComplete = true
+        )
+
+        // TODO: Show mission-complete summary screen via NavController (future)
+        // TODO: Schedule next-day reminder notification via WorkManager (future)
     }
 
     /**

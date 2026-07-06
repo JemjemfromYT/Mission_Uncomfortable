@@ -2,39 +2,42 @@
  * DashboardScreen.kt
  *
  * This is the PRIMARY screen of Mission: Uncomfortable.
- * It is the first screen the user sees after logging in.
+ * It is the first screen the user sees after completing the Welcome intro.
  *
  * ─── WHAT THIS FILE CONTAINS ────────────────────────────────────────────────
  *
  *   DashboardScreen()            — The root composable. Connects to the ViewModel, observes state,
- *                                  and decides what to show (loading, error, or actual content).
+ *                                  and decides what to show (loading, error, daily-complete, or content).
  *
  *   DashboardContent()           — The main layout once data is loaded. Holds all three sections:
  *                                    1. RankBadgeSection   — rank badge + rank name
  *                                    2. XpProgressSection  — XP progress bar + labels
- *                                    3. MissionCard        — Today's active mission card
+ *                                    3. MissionCard        — Today's active/completed mission card
  *
  *   RankBadgeSection()           — Composable for the visual rank badge at the top of the screen.
- *                                  v2: Now uses Image composable (R.drawable.rank_badge_placeholder)
- *                                  instead of a plain text circle.
+ *                                  Uses Image composable (R.drawable.rank_badge_placeholder).
  *
  *   XpProgressSection()          — Composable for the XP progress bar and labels.
+ *                                  v3: The bar animates automatically when xpProgress changes
+ *                                  because animateFloatAsState() reacts to any change in
+ *                                  xpProgress.progressFraction — including after Submit Rating.
  *
  *   MissionCard()                — Composable for the large interactive mission card.
- *                                  v2: Shows mission in military briefing format (OBJECTIVE / RULES),
- *                                  adds a "Swap Mission" button for location-dependent tasks,
- *                                  and shows the DiscomfortSlider after the user accepts.
+ *                                  v3: VIEW COMPLETION button now calls onViewCompletion()
+ *                                  instead of onCardClicked(), triggering the daily-complete state.
  *
- *   MilitaryBriefingSection()    — NEW (v2). Renders the mission brief in a structured
- *                                  OBJECTIVE + RULES format instead of a blocky paragraph.
+ *   DailyCompleteScreen()        — NEW (v3). Shown after the user taps "VIEW COMPLETION".
+ *                                  Displays the updated XP bar + "Come back tomorrow" message.
+ *                                  This gives the user a satisfying final look at their progress
+ *                                  before the app goes quiet for the day.
  *
- *   DiscomfortSliderSection()    — NEW (v2). A 1–10 slider that replaces typed text reflections.
- *                                  Shown after the user accepts the mission so they can rate
- *                                  how uncomfortable the experience was before submitting.
+ *   MilitaryBriefingSection()    — Renders the mission brief in OBJECTIVE + RULES format.
  *
- *   DifficultyIndicator()        — Composable for the row of difficulty dots on the mission card.
- *   LoadingScreen()              — Composable shown while data is loading.
- *   ErrorScreen()                — Composable shown if something went wrong loading data.
+ *   DiscomfortSliderSection()    — 1–10 slider shown after the user accepts the mission.
+ *
+ *   DifficultyIndicator()        — Row of difficulty dots on the mission card.
+ *   LoadingScreen()              — Shown while data is loading.
+ *   ErrorScreen()                — Shown if something went wrong loading data.
  *
  * ─── DESIGN AESTHETIC ────────────────────────────────────────────────────────
  *
@@ -42,42 +45,49 @@
  *   Background: near-black (#0D0D0D)
  *   Surface/Card:  dark grey (#1A1A1A)
  *   Accent:        off-white (#E0E0E0) for primary text
- *   XP bar accent: a muted gold (#C8A84B) — ties into the "rank/achievement" theme
+ *   XP bar accent: muted gold (#C8A84B) — ties into the "rank/achievement" theme
  *   Difficulty dots: active = white, inactive = dark grey
  *
  * ─── HOW TO USE ──────────────────────────────────────────────────────────────
  *
- *   In your NavGraph or Activity, navigate to DashboardScreen like this:
+ *   In MainActivity (or a NavHost), show this composable after the user has
+ *   completed the WelcomeScreen onboarding:
  *
- *       composable("dashboard") {
- *           DashboardScreen(
- *               onMissionClicked = { navController.navigate("mission_detail") }
- *           )
+ *       if (showDashboard) {
+ *           DashboardScreen()
  *       }
  *
  * ─── FUTURE WORK ──────────────────────────────────────────────────────────────
  *
- *   - Replace placeholder data in DashboardViewModel with Room DAO calls
- *   - Add swipe-to-refresh (PullRefreshIndicator) once real networking is in place
+ *   - Replace placeholder data in DashboardViewModel with Room DAO calls.
+ *   - Add swipe-to-refresh (PullRefreshIndicator) once real networking is in place.
  *   - Add real rank badge illustrations to res/drawable and update RankBadgeSection:
- *       replace R.drawable.rank_badge_placeholder with the rank-specific drawable.
- *   - Animate the XP bar filling up when the screen first loads (AnimatedContent)
- *   - Implement onSwapMission() in the ViewModel with real Supabase alternative-mission fetch
- *   - Enforce a daily swap limit (one swap per day) in the ViewModel
+ *       replace R.drawable.rank_badge_placeholder with rank.badgeResId ?: placeholder.
+ *   - Implement onSwapMission() in the ViewModel with real Supabase alternative-mission fetch.
+ *   - Enforce a daily swap limit (one swap per day) in the ViewModel.
+ *   - Replace DailyCompleteScreen with a dedicated MissionCompleteScreen (NavController route)
+ *     showing streak count, discomfort history chart, and next-day preview.
  *
  * ─── CHANGELOG ───────────────────────────────────────────────────────────────
  *
  *   v2 — Applied four UI/UX updates:
  *          1. RankBadgeSection: replaced text-circle placeholder with Image composable.
- *             Uses R.drawable.rank_badge_placeholder. Add this drawable to your
- *             res/drawable folder — any 120×120dp image works as a stand-in.
- *          2. MissionCard: replaced blocky paragraph description with MilitaryBriefingSection
- *             (OBJECTIVE block + numbered RULES list).
- *          3. MissionCard: added "SWAP MISSION" secondary button below "ACCEPT THE MISSION"
- *             for missions where Mission.isLocationDependent == true.
- *          4. MissionCard: added DiscomfortSliderSection (1–10 slider) that appears after
- *             the user accepts the mission. Replaces the old typed-reflection text field.
- *             No emojis used anywhere in this file.
+ *          2. MissionCard: replaced paragraph with MilitaryBriefingSection (OBJECTIVE + RULES).
+ *          3. MissionCard: added "SWAP MISSION" secondary button for location-dependent missions.
+ *          4. MissionCard: added DiscomfortSliderSection (1–10 slider post-accept).
+ *
+ *   v3 — LIVE ENGINE integration:
+ *          1. DashboardScreen: added isDailyComplete check.
+ *             When true, renders DailyCompleteScreen instead of DashboardContent.
+ *             DailyCompleteScreen shows the updated XP bar (so the user sees their new total)
+ *             and a "Come back tomorrow" message.
+ *          2. MissionCard: VIEW COMPLETION button now calls onViewCompletion() (new callback)
+ *             instead of the old onCardClicked() generic handler.
+ *             onViewCompletion() → ViewModel.onViewCompletion() → isDailyComplete = true.
+ *          3. XpProgressSection: no code change needed — the existing animateFloatAsState()
+ *             already reacts to progressFraction changes. When onSubmitReflection() updates
+ *             xpProgress in the ViewModel, the bar animates automatically.
+ *          4. DailyCompleteScreen composable added (new in v3).
  */
 
 package com.example.missionuncomfortable.ui.dashboard
@@ -86,7 +96,7 @@ package com.example.missionuncomfortable.ui.dashboard
 // Jetpack Compose UI building blocks
 import androidx.compose.animation.core.animateFloatAsState        // Smoothly animates a float value
 import androidx.compose.animation.core.tween                       // Animation timing spec
-import androidx.compose.foundation.Image                           // v2: Image composable for rank badge
+import androidx.compose.foundation.Image                           // Image composable for rank badge
 import androidx.compose.foundation.background                      // Sets the background colour of a composable
 import androidx.compose.foundation.clickable                       // Makes a composable respond to taps
 import androidx.compose.foundation.layout.*                        // Box, Column, Row, Spacer, padding, fillMaxSize, etc.
@@ -100,16 +110,16 @@ import androidx.compose.ui.Alignment                               // Alignment 
 import androidx.compose.ui.Modifier                                // Modifier — the "how does it look and behave" chain
 import androidx.compose.ui.draw.clip                               // Clips a composable to a specific shape
 import androidx.compose.ui.graphics.Color                          // Colour class — use hex values like Color(0xFF...)
-import androidx.compose.ui.layout.ContentScale                     // v2: Controls how Image content is scaled inside bounds
-import androidx.compose.ui.res.painterResource                     // v2: Loads a drawable resource for use in Image()
+import androidx.compose.ui.layout.ContentScale                     // Controls how Image content is scaled inside bounds
+import androidx.compose.ui.res.painterResource                     // Loads a drawable resource for use in Image()
 import androidx.compose.ui.text.font.FontWeight                    // Bold, normal, etc.
 import androidx.compose.ui.text.style.TextAlign                    // Centre, start, end alignment for text
 import androidx.compose.ui.unit.dp                                 // Density-independent pixels for spacing/sizing
 import androidx.compose.ui.unit.sp                                 // Scale-independent pixels for font sizes
-import androidx.compose.runtime.livedata.observeAsState            // Bridges LiveData → Compose State (requires lifecycle-livedata-compose dependency)
+import androidx.compose.runtime.livedata.observeAsState            // Bridges LiveData → Compose State
 import androidx.lifecycle.viewmodel.compose.viewModel              // Gets or creates a ViewModel scoped to this composable
-import com.example.missionuncomfortable.R                          // v2: App resource references (R.drawable.rank_badge_placeholder)
-import kotlin.math.roundToInt                                      // v2: Accurate Float-to-Int rounding for the discomfort slider
+import com.example.missionuncomfortable.R                          // App resource references (R.drawable.rank_badge_placeholder)
+import kotlin.math.roundToInt                                      // Accurate Float-to-Int rounding for the discomfort slider
 
 // ─── COLOUR CONSTANTS ────────────────────────────────────────────────────────
 // Defined here so if we ever want to change the design system colours, we change them in ONE place.
@@ -133,10 +143,15 @@ private val ColorDivider = Color(0xFF2E2E2E)           // Very subtle divider li
  * receive plain data (XpProgress, Mission, etc.) rather than the ViewModel itself.
  * This makes child composables easy to test and preview in isolation.
  *
+ * v3: Added isDailyComplete routing.
+ *   - When isDailyComplete is false (normal operation): shows DashboardContent.
+ *   - When isDailyComplete is true (after VIEW COMPLETION): shows DailyCompleteScreen.
+ *     DailyCompleteScreen still receives xpProgress so it can show the updated XP bar.
+ *
  * @param viewModel        The ViewModel that manages this screen's state.
  *                         Provided automatically by `viewModel()` — you don't pass one manually.
  * @param onMissionClicked Called when the user taps the mission card area (not the action buttons).
- *                         Use this to navigate to the Mission Detail screen.
+ *                         Use this to navigate to the Mission Detail screen in the future.
  */
 @Composable
 fun DashboardScreen(
@@ -171,7 +186,17 @@ fun DashboardScreen(
                 )
             }
 
-            // ── CASE 3: Data is ready — show the full dashboard ───────────────
+            // ── CASE 3: User has completed today's mission ────────────────────
+            // v3: isDailyComplete is set to true by ViewModel.onViewCompletion().
+            // Show the "Come back tomorrow" screen instead of the mission card.
+            // We still pass xpProgress so the user can see their updated XP total.
+            uiState.isDailyComplete -> {
+                DailyCompleteScreen(
+                    xpProgress = uiState.xpProgress  // May be null if somehow reached without data
+                )
+            }
+
+            // ── CASE 4: Data is ready — show the full dashboard ───────────────
             else -> {
                 // Both xpProgress and todaysMission should be non-null at this point.
                 // We use safe-calls with ?: just to be defensive.
@@ -188,7 +213,8 @@ fun DashboardScreen(
                         onAcceptMission = { viewModel.onAcceptMission() },
                         onSwapMission = { viewModel.onSwapMission() },
                         onDiscomfortRatingChanged = { rating -> viewModel.onDiscomfortRatingChanged(rating) },
-                        onSubmitReflection = { viewModel.onSubmitReflection() }
+                        onSubmitReflection = { viewModel.onSubmitReflection() },
+                        onViewCompletion = { viewModel.onViewCompletion() }  // v3: new callback
                     )
                 }
             }
@@ -205,17 +231,19 @@ fun DashboardScreen(
  *
  * Uses a vertically scrollable Column so the screen works on small devices too.
  *
- * v2: Now accepts new slider-related parameters and passes them down to MissionCard.
+ * v3: Added onViewCompletion parameter and passes it down to MissionCard.
  *
  * @param xpProgress               The XP and rank progress data to display.
  * @param todaysMission            The mission assigned to the user today.
  * @param showReflectionSlider     True when the discomfort slider should be shown in the card.
  * @param currentDiscomfortRating  The live slider position (1–10) before submission.
- * @param onMissionClicked         Called when the user taps the card area (for navigation).
+ * @param onMissionClicked         Called when the user taps the card area (for future navigation).
  * @param onAcceptMission          Called when the user taps "ACCEPT THE MISSION".
  * @param onSwapMission            Called when the user taps "SWAP MISSION".
  * @param onDiscomfortRatingChanged Called continuously as the user drags the slider.
  * @param onSubmitReflection       Called when the user taps "SUBMIT RATING".
+ * @param onViewCompletion         v3: Called when the user taps "VIEW COMPLETION" on a COMPLETED mission.
+ *                                 Triggers the daily-complete state → DailyCompleteScreen is shown.
  */
 @Composable
 private fun DashboardContent(
@@ -227,7 +255,8 @@ private fun DashboardContent(
     onAcceptMission: () -> Unit,
     onSwapMission: () -> Unit,
     onDiscomfortRatingChanged: (Int) -> Unit,
-    onSubmitReflection: () -> Unit
+    onSubmitReflection: () -> Unit,
+    onViewCompletion: () -> Unit              // v3: new parameter
 ) {
     // rememberScrollState() tracks scroll position so it survives recompositions
     val scrollState = rememberScrollState()
@@ -239,8 +268,10 @@ private fun DashboardContent(
             .fillMaxSize()                     // Fill the whole screen
             .verticalScroll(scrollState)       // Make the whole screen scrollable
             .padding(horizontal = 20.dp)       // 20dp left/right padding on all sections
-            .padding(top = 48.dp,              // Extra top padding for status bar clearance
-                bottom = 32.dp),          // Extra bottom padding so content doesn't get clipped
+            .padding(
+                top = 48.dp,                   // Extra top padding for status bar clearance
+                bottom = 32.dp                 // Extra bottom padding so content doesn't get clipped
+            ),
         horizontalAlignment = Alignment.CenterHorizontally  // Centre children horizontally
     ) {
 
@@ -252,6 +283,8 @@ private fun DashboardContent(
 
         // ── SECTION 2: XP Progress Bar ───────────────────────────────────────
         // Shows how close the user is to ranking up.
+        // v3: The bar animates automatically when xpProgress.progressFraction changes
+        // (i.e., after Submit Rating adds XP in the ViewModel).
         XpProgressSection(xpProgress = xpProgress)
 
         Spacer(modifier = Modifier.height(36.dp))  // Vertical gap between XP bar and mission card
@@ -266,7 +299,8 @@ private fun DashboardContent(
             onAcceptMission = onAcceptMission,
             onSwapMission = onSwapMission,
             onDiscomfortRatingChanged = onDiscomfortRatingChanged,
-            onSubmitReflection = onSubmitReflection
+            onSubmitReflection = onSubmitReflection,
+            onViewCompletion = onViewCompletion    // v3: passed through to the button handler
         )
     }
 }
@@ -278,18 +312,13 @@ private fun DashboardContent(
 /**
  * RankBadgeSection — displays the user's current rank badge and title.
  *
- * v2 CHANGE: The old text-circle placeholder (a Box containing the rank level as a number)
- * has been replaced with an Image composable that loads from R.drawable.rank_badge_placeholder.
+ * Uses an Image composable that loads from R.drawable.rank_badge_placeholder.
  *
  * SETUP REQUIRED:
  *   Before this will compile, add a drawable file called "rank_badge_placeholder" to your
- *   res/drawable folder. Any PNG or vector will work — even a solid circle with the same
- *   gold colour (#C8A84B) as a temporary stand-in. Then swap in rank-specific drawables
- *   (badge_observer, badge_initiate, etc.) when your badge art is ready.
- *
- *   To show different badges per rank, replace `R.drawable.rank_badge_placeholder` with
- *   `rank.badgeResId ?: R.drawable.rank_badge_placeholder` — this uses the rank-specific
- *   asset if it exists, or falls back to the placeholder if it doesn't.
+ *   res/drawable folder. Any PNG or vector will work as a temporary stand-in.
+ *   When real per-rank badge art is ready, change the painter to:
+ *       painterResource(id = rank.badgeResId ?: R.drawable.rank_badge_placeholder)
  *
  * @param rank  The user's current Rank object (level, title, description).
  */
@@ -302,23 +331,19 @@ private fun RankBadgeSection(rank: Rank) {
     ) {
 
         // ── RANK BADGE IMAGE ───────────────────────────────────────────────
-        // v2: Replaced the Box+Text placeholder with a proper Image composable.
-        //
         // ContentScale.Fit: scales the image to fill the 120×120dp frame while maintaining
         // its aspect ratio. This prevents stretching or cropping.
-        //
         // clip(CircleShape): masks the image to a circle, matching the old placeholder shape.
         //
         // TODO (when rank-specific art is ready):
         //   Change the painter argument to:
         //     painterResource(id = rank.badgeResId ?: R.drawable.rank_badge_placeholder)
-        //   This will automatically show the correct badge for each rank level.
         Image(
             painter = painterResource(id = R.drawable.rank_badge_placeholder),
             contentDescription = "Rank badge for ${rank.title}",   // Accessibility label
             contentScale = ContentScale.Fit,                         // Scale to fit within bounds
             modifier = Modifier
-                .size(120.dp)                // 120dp diameter — same size as the old circle placeholder
+                .size(120.dp)                // 120dp diameter
                 .clip(CircleShape)           // Clip the image to a circle
         )
 
@@ -327,10 +352,10 @@ private fun RankBadgeSection(rank: Rank) {
         // ── RANK LABEL ────────────────────────────────────────────────────
         // "RANK" in small caps above the rank title — acts as a label/category
         Text(
-            text = "RANK",                          // Static label text
+            text = "RANK",
             color = ColorTextSecondary,             // Muted grey — this is supporting info
-            fontSize = 11.sp,                       // Tiny — just a label
-            fontWeight = FontWeight.SemiBold,       // Slightly bold so it reads cleanly at small size
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
             letterSpacing = 3.sp                   // Wide letter spacing for a sleek, "stamp" feel
         )
 
@@ -339,10 +364,10 @@ private fun RankBadgeSection(rank: Rank) {
         // ── RANK TITLE ────────────────────────────────────────────────────
         // The rank's name, e.g. "The Initiate", in large white text
         Text(
-            text = rank.title,                      // e.g. "The Initiate"
+            text = rank.title,
             color = ColorTextPrimary,              // Off-white — this is the most important text here
-            fontSize = 24.sp,                      // Prominent size — this is the hero text
-            fontWeight = FontWeight.Bold           // Bold for authority/presence
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold
         )
 
         Spacer(modifier = Modifier.height(6.dp))   // Small gap before description
@@ -350,11 +375,11 @@ private fun RankBadgeSection(rank: Rank) {
         // ── RANK DESCRIPTION ──────────────────────────────────────────────
         // Short flavour text describing the rank — less prominent than the title
         Text(
-            text = rank.description,               // e.g. "You've taken your first uncomfortable step."
+            text = rank.description,
             color = ColorTextSecondary,            // Muted grey — supporting flavour, not critical
-            fontSize = 13.sp,                     // Small but readable
-            textAlign = TextAlign.Center,         // Centre-aligned to match the column alignment
-            modifier = Modifier.padding(horizontal = 24.dp)  // Extra horizontal padding so long text wraps nicely
+            fontSize = 13.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 24.dp)  // Extra padding so long text wraps nicely
         )
     }
 }
@@ -371,6 +396,12 @@ private fun RankBadgeSection(rank: Rank) {
  *   - The animated progress bar
  *   - A "X XP until next rank" line below the bar
  *
+ * v3 NOTE — No code changes were needed here.
+ *   The animateFloatAsState() call already reacts to any change in xpProgress.progressFraction.
+ *   When DashboardViewModel.onSubmitReflection() increments XP and pushes a new XpProgress
+ *   into state, this composable re-composes with the new progressFraction, and the bar
+ *   smoothly animates from the old value to the new one over 1000ms.
+ *
  * @param xpProgress  The XpProgress object with currentXp, progressFraction, etc.
  */
 @Composable
@@ -379,10 +410,11 @@ private fun XpProgressSection(xpProgress: XpProgress) {
     // ── ANIMATE THE PROGRESS FRACTION ─────────────────────────────────────
     // `animateFloatAsState` smoothly animates the bar filling up when xpProgress changes.
     // tween(durationMillis = 1000) means the animation takes 1 second.
-    // On first composition, the bar will animate from 0 to the real value — a satisfying effect.
+    // On first composition, the bar animates from 0 to the real value — satisfying.
+    // On XP change (after Submit Rating), it animates from old fraction to new fraction.
     val animatedProgress by animateFloatAsState(
         targetValue = xpProgress.progressFraction,       // The real progress value from our model
-        animationSpec = tween(durationMillis = 1000),    // 1-second animation
+        animationSpec = tween(durationMillis = 1000),    // 1-second smooth animation
         label = "xpProgressAnimation"                   // Label for debugging/tooling
     )
 
@@ -392,19 +424,17 @@ private fun XpProgressSection(xpProgress: XpProgress) {
         // "TOTAL XP" on the left, "next rank at 500 XP" on the right
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,  // Push labels to opposite ends
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Left label: "TOTAL XP" — the section header
             Text(
                 text = "TOTAL XP",
                 color = ColorTextSecondary,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
-                letterSpacing = 2.sp                           // Wide spacing for sleek look
+                letterSpacing = 2.sp
             )
 
-            // Right label: "next rank at X XP" — tells the user their target
             Text(
                 text = "next rank at ${xpProgress.xpForNextRank} XP",
                 color = ColorTextSecondary,
@@ -412,48 +442,47 @@ private fun XpProgressSection(xpProgress: XpProgress) {
             )
         }
 
-        Spacer(modifier = Modifier.height(8.dp))  // Gap between labels and current XP number
+        Spacer(modifier = Modifier.height(8.dp))
 
         // ── CURRENT XP ────────────────────────────────────────────────────
-        // Large bold number showing the user's total earned XP
+        // Large bold number showing the user's total earned XP.
+        // v3: This updates immediately when the ViewModel pushes new xpProgress state.
         Text(
-            text = "${xpProgress.currentXp} XP",    // e.g. "350 XP"
-            color = ColorTextPrimary,               // Off-white — this is important info
-            fontSize = 28.sp,                       // Large and prominent
+            text = "${xpProgress.currentXp} XP",
+            color = ColorTextPrimary,
+            fontSize = 28.sp,
             fontWeight = FontWeight.Bold
         )
 
-        Spacer(modifier = Modifier.height(12.dp))  // Gap between XP number and progress bar
+        Spacer(modifier = Modifier.height(12.dp))
 
         // ── PROGRESS BAR ──────────────────────────────────────────────────
-        // A custom progress bar — Material's LinearProgressIndicator doesn't give enough design control,
-        // so we build ours from a Box (background track) with an inner Box (fill).
+        // A custom progress bar — Material's LinearProgressIndicator doesn't give enough
+        // design control, so we build ours from a Box (background track) with an inner Box (fill).
         Box(
             modifier = Modifier
                 .fillMaxWidth()                                // Bar spans the full screen width
-                .height(8.dp)                                  // 8dp tall — substantial but not chunky
-                .clip(RoundedCornerShape(4.dp))               // Rounded ends on the track
+                .height(8.dp)
+                .clip(RoundedCornerShape(4.dp))
                 .background(ColorSurface)                     // Dark grey track (unfilled portion)
         ) {
-            // The filled portion of the bar — its width is controlled by animatedProgress (0f to 1f)
+            // The filled portion — its width is controlled by animatedProgress (0f to 1f).
+            // animatedProgress smoothly interpolates to the new fraction whenever xpProgress changes.
             Box(
                 modifier = Modifier
-                    .fillMaxHeight()                           // Full height of the track
+                    .fillMaxHeight()
                     .fillMaxWidth(animatedProgress)            // Only fill X% of the width
-                    .clip(RoundedCornerShape(4.dp))           // Rounded ends on the fill too
-                    .background(ColorAccentGold)              // Muted gold fill — feels like an achievement
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(ColorAccentGold)              // Muted gold fill — achievement feel
             )
         }
 
-        Spacer(modifier = Modifier.height(8.dp))  // Gap between bar and "X XP until next rank" text
+        Spacer(modifier = Modifier.height(8.dp))
 
         // ── XP UNTIL NEXT RANK ────────────────────────────────────────────
-        // Shows how many more XP the user needs to rank up
         Text(
             text = "${xpProgress.xpUntilNextRank} XP until ${
                 // Look up the NEXT rank's title from ALL_RANKS — e.g. "The Challenger"
-                // We find the rank with level = currentRank.level + 1
-                // If the user is at max rank, fall back to "Max Rank"
                 ALL_RANKS.find { it.level == xpProgress.currentRank.level + 1 }?.title ?: "Max Rank"
             }",
             color = ColorTextSecondary,
@@ -467,33 +496,32 @@ private fun XpProgressSection(xpProgress: XpProgress) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * MissionCard — a large, interactive card showing today's active mission.
+ * MissionCard — a large, interactive card showing today's active or completed mission.
  *
  * The card is divided into:
- *   - A header bar: "TODAY'S MISSION" label + status badge (ACTIVE / DONE)
+ *   - A header bar: "TODAY'S MISSION" label + status badge (ACTIVE / COMPLETED)
  *   - The mission title (large, bold)
- *   - MilitaryBriefingSection: OBJECTIVE block + numbered RULES list (v2 — replaces paragraph)
+ *   - MilitaryBriefingSection: OBJECTIVE block + numbered RULES list
  *   - A footer: difficulty dots on the left, XP reward on the right
- *   - "ACCEPT THE MISSION" action button
- *   - "SWAP MISSION" secondary button (v2 — only shown when mission.isLocationDependent == true)
- *   - DiscomfortSliderSection (v2 — shown after the user accepts the mission)
+ *   - Primary action button (ACCEPT THE MISSION / VIEW COMPLETION / etc.)
+ *   - "SWAP MISSION" secondary button (only shown when mission.isLocationDependent == true)
+ *   - DiscomfortSliderSection (shown after the user accepts the mission)
  *
- * v2 CHANGES:
- *   - `description` paragraph replaced with MilitaryBriefingSection (OBJECTIVE + RULES format).
- *   - "SWAP MISSION" button added below the accept button (conditional).
- *   - DiscomfortSliderSection added at the bottom of the card (conditional on showReflectionSlider).
- *   - Card no longer calls onClick for the whole card area, to avoid accidental navigation
- *     while the user interacts with the slider. The card area click is preserved via onCardClicked
- *     but the individual buttons have their own handlers.
+ * v3 CHANGES:
+ *   - Added `onViewCompletion` parameter.
+ *   - The VIEW COMPLETION button (COMPLETED status) now calls onViewCompletion() directly
+ *     instead of the old generic onCardClicked(). This is the correct separation of concerns:
+ *     "view completion" is a distinct user intent from "tap to navigate to detail".
  *
  * @param mission                 The Mission object to display.
  * @param showReflectionSlider    True = show the discomfort slider below the action buttons.
  * @param currentDiscomfortRating The live slider position (1–10).
- * @param onCardClicked           Called when the user taps the card area (for navigation).
+ * @param onCardClicked           Called when the user taps the card area (for future navigation).
  * @param onAcceptMission         Called when the user taps "ACCEPT THE MISSION".
  * @param onSwapMission           Called when the user taps "SWAP MISSION".
  * @param onDiscomfortRatingChanged Called as the slider moves.
  * @param onSubmitReflection      Called when the user taps "SUBMIT RATING".
+ * @param onViewCompletion        v3: Called when the user taps "VIEW COMPLETION" on a COMPLETED mission.
  */
 @Composable
 private fun MissionCard(
@@ -504,24 +532,21 @@ private fun MissionCard(
     onAcceptMission: () -> Unit,
     onSwapMission: () -> Unit,
     onDiscomfortRatingChanged: (Int) -> Unit,
-    onSubmitReflection: () -> Unit
+    onSubmitReflection: () -> Unit,
+    onViewCompletion: () -> Unit              // v3: new parameter
 ) {
     // The card is a Box so we can control its shape and background precisely.
-    // Using a Box rather than Card gives us full control over the dark theme.
     //
-    // v2 NOTE — Conditional clickable:
+    // Conditional clickable (v2):
     //   When showReflectionSlider is true, the user is actively interacting with the slider
     //   inside the card. In that state we suppress the outer card-level tap-to-navigate behaviour
     //   so accidental taps on the card body don't trigger navigation mid-rating.
-    //   When the slider is hidden (normal browsing mode), the card remains fully tappable.
     Box(
         modifier = Modifier
-            .fillMaxWidth()                                     // Card spans full screen width
-            .clip(RoundedCornerShape(16.dp))                   // Rounded corners — sleek, not sharp
-            .background(ColorSurface)                          // Dark grey card background
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(ColorSurface)
             .then(
-                // Only attach the card-level click handler when the slider is NOT visible.
-                // This prevents accidental navigation while the user is interacting with the slider.
                 if (!showReflectionSlider) {
                     Modifier.clickable(onClick = onCardClicked)
                 } else {
@@ -529,48 +554,43 @@ private fun MissionCard(
                 }
             )
     ) {
-        // Main content column inside the card
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp)  // Comfortable padding inside the card on all sides
+                .padding(20.dp)
         ) {
 
             // ── CARD HEADER ───────────────────────────────────────────────
-            // "TODAY'S MISSION" label on the left, status badge on the right
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,  // Push items to opposite ends
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // "TODAY'S MISSION" label — acts as the card category header
                 Text(
                     text = "TODAY'S MISSION",
                     color = ColorTextSecondary,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 2.sp                           // Wide spacing for sleek label look
+                    letterSpacing = 2.sp
                 )
 
-                // Status badge — shows "ACTIVE" in gold or "COMPLETED" in green
-                // The background colour changes based on mission status
+                // Status badge — colour changes based on mission status
                 val statusColor = when (mission.status) {
-                    MissionStatus.ACTIVE -> ColorAccentGold           // Gold = active/in progress
-                    MissionStatus.COMPLETED -> Color(0xFF4CAF50)     // Green = done
-                    MissionStatus.FAILED -> Color(0xFFD32F2F)        // Red = failed
-                    MissionStatus.LOCKED -> ColorTextSecondary       // Grey = locked
+                    MissionStatus.ACTIVE    -> ColorAccentGold          // Gold = active/in progress
+                    MissionStatus.COMPLETED -> Color(0xFF4CAF50)        // Green = done
+                    MissionStatus.FAILED    -> Color(0xFFD32F2F)        // Red = failed
+                    MissionStatus.LOCKED    -> ColorTextSecondary       // Grey = locked
                 }
 
-                // The status badge is a small pill-shaped Box with coloured text inside
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))             // Slightly rounded pill
-                        .background(statusColor.copy(alpha = 0.15f)) // Very faint background tint
-                        .padding(horizontal = 8.dp, vertical = 4.dp) // Compact padding
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(statusColor.copy(alpha = 0.15f))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
                     Text(
-                        text = mission.status.name,                  // e.g. "ACTIVE", "COMPLETED"
-                        color = statusColor,                         // Matches the background tint
+                        text = mission.status.name,
+                        color = statusColor,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.sp
@@ -578,55 +598,47 @@ private fun MissionCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))  // Gap between header and mission title
+            Spacer(modifier = Modifier.height(16.dp))
 
             // ── MISSION TITLE ─────────────────────────────────────────────
-            // Large, prominent mission name — this is the first thing the eye should land on
             Text(
-                text = mission.title,                               // e.g. "The Silent Stranger"
-                color = ColorTextPrimary,                          // Off-white — max contrast
-                fontSize = 22.sp,                                  // Large — this is the hero text on the card
+                text = mission.title,
+                color = ColorTextPrimary,
+                fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
-                lineHeight = 28.sp                                 // Comfortable line height for multi-line titles
+                lineHeight = 28.sp
             )
 
-            Spacer(modifier = Modifier.height(16.dp))  // Gap between title and briefing section
+            Spacer(modifier = Modifier.height(16.dp))
 
             // ── MISSION BRIEFING (MILITARY FORMAT) ───────────────────────
-            // v2: Replaced the flat paragraph `description` text with a structured
-            // MilitaryBriefingSection that shows an OBJECTIVE block + numbered RULES list.
-            // This makes mission instructions clearer and more scannable.
+            // Structured OBJECTIVE block + numbered RULES list.
             MilitaryBriefingSection(
                 objective = mission.objective,
                 rules = mission.rules
             )
 
-            Spacer(modifier = Modifier.height(20.dp))  // Gap between briefing and divider
+            Spacer(modifier = Modifier.height(20.dp))
 
             // ── SUBTLE DIVIDER ────────────────────────────────────────────
-            // A hairline horizontal line separating the briefing from the card footer
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(1.dp)                                  // 1dp = hairline thickness
-                    .background(ColorDivider)                      // Very subtle dark line
+                    .height(1.dp)
+                    .background(ColorDivider)
             )
 
-            Spacer(modifier = Modifier.height(16.dp))  // Gap between divider and footer
+            Spacer(modifier = Modifier.height(16.dp))
 
             // ── CARD FOOTER ───────────────────────────────────────────────
-            // Difficulty dots on the left, XP reward on the right
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Left: difficulty indicator (5 dots, filled up to the difficulty level)
                 DifficultyIndicator(difficulty = mission.difficulty)
 
-                // Right: XP reward — how much XP the user earns for completing this
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // "+" prefix in gold to suggest gain
                     Text(
                         text = "+",
                         color = ColorAccentGold,
@@ -634,32 +646,28 @@ private fun MissionCard(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "${mission.xpReward} XP",           // e.g. "+75 XP"
-                        color = ColorAccentGold,                   // Gold to match the XP bar colour
+                        text = "${mission.xpReward} XP",
+                        color = ColorAccentGold,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))  // Gap between footer and action buttons
+            Spacer(modifier = Modifier.height(20.dp))
 
             // ── PRIMARY ACTION BUTTON ─────────────────────────────────────
-            // "ACCEPT THE MISSION" for ACTIVE, "VIEW COMPLETION" for COMPLETED, etc.
-            // v2: ACTIVE state now calls onAcceptMission() instead of onCardClicked()
-            // so the ViewModel can independently track acceptance + reveal the slider.
+            // Label and enabled state differ by mission status.
             val buttonText = when (mission.status) {
-                MissionStatus.ACTIVE -> "ACCEPT THE MISSION"        // CTA for an active mission
-                MissionStatus.COMPLETED -> "VIEW COMPLETION"        // View proof/reflection
-                MissionStatus.FAILED -> "MISSION FAILED"           // Non-interactive
-                MissionStatus.LOCKED -> "UNLOCK AT NEXT RANK"      // Non-interactive
+                MissionStatus.ACTIVE    -> "ACCEPT THE MISSION"
+                MissionStatus.COMPLETED -> "VIEW COMPLETION"
+                MissionStatus.FAILED    -> "MISSION FAILED"
+                MissionStatus.LOCKED    -> "UNLOCK AT NEXT RANK"
             }
 
-            // Whether the primary button should respond to taps
             val isPrimaryButtonEnabled = mission.status == MissionStatus.ACTIVE ||
                     mission.status == MissionStatus.COMPLETED
 
-            // The primary action button — gold fill when enabled
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
@@ -672,13 +680,17 @@ private fun MissionCard(
                     .clickable(
                         enabled = isPrimaryButtonEnabled,
                         onClick = {
-                            // v2: For an ACTIVE mission, tap "ACCEPT THE MISSION" triggers
-                            // onAcceptMission() (which shows the slider) rather than navigating away.
-                            // For COMPLETED, it navigates via onCardClicked.
-                            if (mission.status == MissionStatus.ACTIVE) {
-                                onAcceptMission()
-                            } else {
-                                onCardClicked()
+                            when (mission.status) {
+                                // ACTIVE: show the slider so the user can rate discomfort.
+                                MissionStatus.ACTIVE -> onAcceptMission()
+
+                                // COMPLETED: v3 — call onViewCompletion() to transition to
+                                // the "Come back tomorrow" daily-complete screen.
+                                // Previously this called onCardClicked() which did nothing.
+                                MissionStatus.COMPLETED -> onViewCompletion()
+
+                                // FAILED / LOCKED: button is disabled, this branch never fires.
+                                else -> {}
                             }
                         }
                     )
@@ -694,33 +706,24 @@ private fun MissionCard(
             }
 
             // ── SWAP MISSION BUTTON (LOCATION-DEPENDENT MISSIONS ONLY) ────
-            // v2: NEW BUTTON. Only shown when Mission.isLocationDependent == true.
-            //
-            // Some missions require the user to travel to a specific type of place.
-            // If the user cannot reach that location (e.g., stuck at home, unwell, no transport),
-            // this button lets them swap to an alternative mission that does NOT require travel.
-            //
-            // Design rationale for secondary styling (outline instead of fill):
-            //   The swap is a fallback — we don't want to incentivise using it.
-            //   The subtle outline treatment makes it available but not prominent.
-            //   It sits BELOW the primary action so the eye lands on "Accept" first.
+            // Only shown when Mission.isLocationDependent == true and mission is still ACTIVE.
+            // Lets the user swap to a non-location-dependent alternative if they can't travel.
             if (mission.isLocationDependent && mission.status == MissionStatus.ACTIVE) {
 
-                Spacer(modifier = Modifier.height(10.dp))  // Small gap between primary and secondary buttons
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // Secondary button — outlined style (no fill, border stroke)
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
-                        .background(ColorSurfaceVariant)       // Slightly lighter than the card — subtle but distinct
-                        .clickable(onClick = onSwapMission)    // Calls ViewModel.onSwapMission()
+                        .background(ColorSurfaceVariant)
+                        .clickable(onClick = onSwapMission)
                         .padding(vertical = 12.dp)
                 ) {
                     Text(
-                        text = "SWAP MISSION",                 // No emojis — clean, direct label
-                        color = ColorTextSecondary,            // Muted text — de-emphasised vs. the gold button
+                        text = "SWAP MISSION",
+                        color = ColorTextSecondary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         letterSpacing = 1.5.sp
@@ -729,18 +732,12 @@ private fun MissionCard(
             }
 
             // ── DISCOMFORT SLIDER SECTION ─────────────────────────────────
-            // v2: NEW SECTION. Shown after the user taps "ACCEPT THE MISSION".
-            // Replaces the old typed-reflection text field.
-            //
-            // The slider lets the user rate how uncomfortable the experience was on a 1–10 scale.
-            // Tapping "SUBMIT RATING" records the value, marks the mission COMPLETED, and hides the slider.
-            //
-            // showReflectionSlider is controlled by DashboardUiState (set to true in onAcceptMission()).
+            // Shown after the user taps "ACCEPT THE MISSION".
+            // showReflectionSlider is set to true by ViewModel.onAcceptMission().
             if (showReflectionSlider) {
 
-                Spacer(modifier = Modifier.height(20.dp))  // Gap between buttons and slider section
+                Spacer(modifier = Modifier.height(20.dp))
 
-                // A hairline divider to visually separate the action buttons from the slider section
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -750,7 +747,6 @@ private fun MissionCard(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // The slider composable — handles all internal layout and labels
                 DiscomfortSliderSection(
                     currentRating = currentDiscomfortRating,
                     onRatingChanged = onDiscomfortRatingChanged,
@@ -762,13 +758,160 @@ private fun MissionCard(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// DAILY COMPLETE SCREEN — shown after the user taps "VIEW COMPLETION"
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * DailyCompleteScreen — the end-of-day state shown after the user views their completion.
+ *
+ * v3 NEW COMPOSABLE.
+ *
+ * Triggered by: ViewModel.onViewCompletion() → isDailyComplete = true → DashboardScreen routes here.
+ *
+ * What it shows:
+ *   - The updated XP progress bar (so the user can see their new total and bar fill level).
+ *   - A "DAILY MISSION COMPLETE" headline.
+ *   - A "Come back tomorrow for your next mission." subline.
+ *   - A subtle "Rest. You earned it." flavour line at the bottom.
+ *
+ * Why show XP here?
+ *   The XP animation plays when onSubmitReflection() runs (on the mission card).
+ *   By the time the user taps VIEW COMPLETION, the bar has already animated.
+ *   Showing the bar here gives one final, satisfying look at their progress before
+ *   the screen goes quiet for the day.
+ *
+ * Future:
+ *   Replace with a full MissionCompleteScreen (separate NavController destination) that shows:
+ *   streak count, discomfort history, weekly progress chart, and a next-mission preview.
+ *
+ * @param xpProgress  The user's current XP data (after the mission XP was added).
+ *                    May be null if the screen is reached in an unexpected state — handled safely.
+ */
+@Composable
+private fun DailyCompleteScreen(xpProgress: XpProgress?) {
+
+    // Vertically scrollable so it works on all screen sizes
+    val scrollState = rememberScrollState()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(scrollState)
+            .padding(horizontal = 20.dp)
+            .padding(top = 80.dp, bottom = 40.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+
+        // ── COMPLETION HEADLINE ───────────────────────────────────────────
+        // "DAILY MISSION" in small caps — the label
+        Text(
+            text = "DAILY MISSION",
+            color = ColorTextSecondary,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 3.sp,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // "COMPLETE" in large gold — the hero word for this screen
+        Text(
+            text = "COMPLETE",
+            color = ColorAccentGold,
+            fontSize = 36.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 2.sp,
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Divider line under the headline — gives it a "stamp" quality
+        Box(
+            modifier = Modifier
+                .width(60.dp)
+                .height(2.dp)
+                .background(ColorAccentGold.copy(alpha = 0.5f))
+        )
+
+        Spacer(modifier = Modifier.height(48.dp))
+
+        // ── UPDATED XP SECTION ────────────────────────────────────────────
+        // Show the XP bar so the user can see their final standing after the mission reward.
+        // Only rendered if xpProgress is non-null (safety guard).
+        if (xpProgress != null) {
+            XpProgressSection(xpProgress = xpProgress)
+            Spacer(modifier = Modifier.height(48.dp))
+        }
+
+        // ── COME BACK TOMORROW MESSAGE ────────────────────────────────────
+        // Inside a Card so it has the same surface treatment as the mission card —
+        // visual consistency with the rest of the Dashboard.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(ColorSurface)
+                .padding(24.dp)
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+
+                // "NEXT MISSION" label — same style as "TODAY'S MISSION" on the card header
+                Text(
+                    text = "NEXT MISSION",
+                    color = ColorTextSecondary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 2.sp,
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Main message — direct, stoic, no fluff
+                Text(
+                    text = "Come back tomorrow for your next mission.",
+                    color = ColorTextPrimary,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 24.sp
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Secondary flavour line — quiet encouragement
+                Text(
+                    text = "Each day you show up, you change.",
+                    color = ColorTextSecondary,
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 20.sp
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(40.dp))
+
+        // ── STOIC SIGN-OFF ────────────────────────────────────────────────
+        // Very faint — almost a watermark. The user should almost miss it.
+        Text(
+            text = "Rest. You earned it.",
+            color = ColorTextSecondary.copy(alpha = 0.4f),
+            fontSize = 12.sp,
+            letterSpacing = 1.sp,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MILITARY BRIEFING SECTION — structured OBJECTIVE + RULES format
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * MilitaryBriefingSection — renders the mission instructions in a structured format.
- *
- * v2 NEW COMPOSABLE. Replaces the old flat paragraph mission description.
  *
  * Layout:
  *   OBJECTIVE
@@ -778,14 +921,6 @@ private fun MissionCard(
  *   1. [rule one]
  *   2. [rule two]
  *   ...
- *
- * Design decisions:
- *   - "OBJECTIVE" and "RULES" are rendered as small-caps labels (like the "RANK" and "TOTAL XP"
- *     labels elsewhere in the design) — wide letter spacing, muted grey, semibold.
- *   - The objective text uses primary text colour (off-white) for clarity.
- *   - Rules are numbered and displayed in secondary text colour (muted grey), slightly smaller.
- *   - No bullet points — numbered rules feel more like a field brief and are easier to track.
- *   - No emojis anywhere in this composable.
  *
  * @param objective  A single clear sentence describing the mission's primary goal.
  * @param rules      An ordered list of rules/constraints the user must follow.
@@ -798,31 +933,26 @@ private fun MilitaryBriefingSection(
     Column(modifier = Modifier.fillMaxWidth()) {
 
         // ── OBJECTIVE BLOCK ───────────────────────────────────────────────
-
-        // "OBJECTIVE" label — styled like other section labels in the design
         Text(
             text = "OBJECTIVE",
-            color = ColorTextSecondary,            // Muted grey — this is a label, not content
+            color = ColorTextSecondary,
             fontSize = 10.sp,
             fontWeight = FontWeight.SemiBold,
-            letterSpacing = 2.sp                  // Wide spacing matches the label aesthetic elsewhere
+            letterSpacing = 2.sp
         )
 
-        Spacer(modifier = Modifier.height(6.dp))  // Tight gap between label and content
+        Spacer(modifier = Modifier.height(6.dp))
 
-        // The objective text — single sentence, prominent colour
         Text(
             text = objective,
-            color = ColorTextPrimary,             // Off-white — the objective is the most important content
+            color = ColorTextPrimary,
             fontSize = 14.sp,
-            lineHeight = 21.sp                    // 1.5x line height for comfortable reading
+            lineHeight = 21.sp
         )
 
-        Spacer(modifier = Modifier.height(16.dp)) // Gap between OBJECTIVE block and RULES block
+        Spacer(modifier = Modifier.height(16.dp))
 
         // ── RULES BLOCK ───────────────────────────────────────────────────
-
-        // "RULES" label — same style as "OBJECTIVE" label above
         Text(
             text = "RULES",
             color = ColorTextSecondary,
@@ -831,32 +961,30 @@ private fun MilitaryBriefingSection(
             letterSpacing = 2.sp
         )
 
-        Spacer(modifier = Modifier.height(8.dp))  // Gap between label and first rule
+        Spacer(modifier = Modifier.height(8.dp))
 
-        // Render each rule as a numbered line.
-        // `forEachIndexed` gives us both the index (for numbering) and the string (the rule text).
         rules.forEachIndexed { index, rule ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 6.dp),          // 6dp gap below each rule row
-                verticalAlignment = Alignment.Top     // Align number and text at the top for multi-line rules
+                    .padding(bottom = 6.dp),
+                verticalAlignment = Alignment.Top
             ) {
-                // Rule number — right-aligned in a fixed-width column so multi-digit numbers don't shift the text
+                // Rule number — gold, fixed width so text left-aligns neatly
                 Text(
-                    text = "${index + 1}.",             // "1.", "2.", "3.", etc.
-                    color = ColorAccentGold,            // Gold numbering ties into the achievement theme
+                    text = "${index + 1}.",
+                    color = ColorAccentGold,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.width(24.dp)   // Fixed width keeps all rule texts left-aligned
+                    modifier = Modifier.width(24.dp)
                 )
 
-                // Rule text — slightly smaller than the objective, muted colour
+                // Rule text — muted, supporting content
                 Text(
                     text = rule,
-                    color = ColorTextSecondary,        // Muted — rules are supporting content
+                    color = ColorTextSecondary,
                     fontSize = 13.sp,
-                    lineHeight = 20.sp                 // Comfortable line height for multi-line rules
+                    lineHeight = 20.sp
                 )
             }
         }
@@ -870,19 +998,16 @@ private fun MilitaryBriefingSection(
 /**
  * DiscomfortSliderSection — a 1–10 slider for rating post-mission discomfort.
  *
- * v2 NEW COMPOSABLE. Replaces typed text reflections.
- *
  * Shown inside MissionCard after the user taps "ACCEPT THE MISSION".
  * The user drags the slider to rate how uncomfortable the experience was,
  * then taps "SUBMIT RATING" to record the result and mark the mission complete.
  *
- * Design decisions:
- *   - The slider uses Material 3's `Slider` composable with a gold thumb and track.
- *   - The current rating is displayed as a large number above the slider so the user
- *     can clearly see their selected value while dragging.
- *   - Range labels "1" and "10" are shown at either end of the slider for orientation.
- *   - "SUBMIT RATING" is styled like the primary action button (gold fill, dark text).
- *   - No emojis used anywhere.
+ * Tapping SUBMIT RATING:
+ *   → ViewModel.onSubmitReflection()
+ *   → XP is added, rank is recalculated, mission is COMPLETED
+ *   → XP bar animates to new value
+ *   → Slider hides
+ *   → "VIEW COMPLETION" button appears
  *
  * @param currentRating     The live slider position (1–10). Updated by the ViewModel.
  * @param onRatingChanged   Called with the new Int value whenever the slider moves.
@@ -897,23 +1022,21 @@ private fun DiscomfortSliderSection(
     Column(modifier = Modifier.fillMaxWidth()) {
 
         // ── SECTION HEADER ────────────────────────────────────────────────
-        // Brief prompt — tells the user what the slider is for
         Text(
             text = "HOW UNCOMFORTABLE WAS THAT?",
             color = ColorTextSecondary,
             fontSize = 10.sp,
             fontWeight = FontWeight.SemiBold,
-            letterSpacing = 2.sp                  // Wide spacing — matches other label style
+            letterSpacing = 2.sp
         )
 
         Spacer(modifier = Modifier.height(12.dp))
 
         // ── CURRENT RATING DISPLAY ────────────────────────────────────────
-        // Large, centred number showing the user's current slider position.
-        // Updates in real time as the slider thumb moves.
+        // Large centred number — updates in real time as the slider moves.
         Text(
-            text = "$currentRating / 10",           // e.g. "7 / 10"
-            color = ColorAccentGold,               // Gold — ties into the achievement/XP colour system
+            text = "$currentRating / 10",
+            color = ColorAccentGold,
             fontSize = 32.sp,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
@@ -922,73 +1045,52 @@ private fun DiscomfortSliderSection(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // ── SLIDER + RANGE LABELS ROW ─────────────────────────────────────
-        // The "1" and "10" labels flank the slider so the user knows the scale.
+        // ── SLIDER + RANGE LABELS ─────────────────────────────────────────
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Left range label — "1" = least uncomfortable
-            Text(
-                text = "1",
-                color = ColorTextSecondary,
-                fontSize = 12.sp
-            )
+            Text(text = "1", color = ColorTextSecondary, fontSize = 12.sp)
 
-            // Material 3 Slider — the core interactive element.
-            //
+            // Material 3 Slider.
             // valueRange: 1f..10f so the thumb snaps between 1 and 10.
-            // steps: 8 creates 10 discrete positions (steps+2 total positions for a range of size 10).
-            //   steps = (max - min - 1) = 10 - 1 - 1 = 8.
-            // value: must be a Float for Slider, so we cast currentRating to Float.
-            // onValueChange: converts the incoming Float back to Int before calling onRatingChanged.
-            //
-            // Colors.sliderColors() customises the thumb and active track to gold.
-            // All inactive/inactive parts use a darker variant of the surface colour.
+            // steps = 8 creates 10 discrete positions (8 intermediate + 2 endpoints).
+            // roundToInt() rather than toInt() avoids off-by-one from floating-point imprecision.
             Slider(
-                value = currentRating.toFloat(),              // Slider works in Float internally
+                value = currentRating.toFloat(),
                 onValueChange = { newValue ->
-                    // roundToInt() rather than toInt() (truncation) avoids off-by-one errors
-                    // caused by floating-point imprecision near integer boundaries.
-                    // e.g. a thumb snapped to "7" might internally be 6.9999... — truncation
-                    // would give 6, but rounding correctly gives 7. Then clamp to [1,10] for safety.
                     onRatingChanged(newValue.roundToInt().coerceIn(1, 10))
                 },
-                valueRange = 1f..10f,                        // The valid range of the slider
-                steps = 8,                                   // 8 intermediate steps → 10 discrete positions
+                valueRange = 1f..10f,
+                steps = 8,
                 colors = SliderDefaults.colors(
-                    thumbColor = ColorAccentGold,             // Gold thumb — matches the XP bar accent
-                    activeTrackColor = ColorAccentGold,       // Gold filled track (left of thumb)
-                    inactiveTrackColor = ColorSurfaceVariant  // Dark grey empty track (right of thumb)
+                    thumbColor = ColorAccentGold,
+                    activeTrackColor = ColorAccentGold,
+                    inactiveTrackColor = ColorSurfaceVariant
                 ),
-                modifier = Modifier.weight(1f)               // Slider takes all remaining horizontal space
+                modifier = Modifier.weight(1f)
             )
 
-            // Right range label — "10" = most uncomfortable
-            Text(
-                text = "10",
-                color = ColorTextSecondary,
-                fontSize = 12.sp
-            )
+            Text(text = "10", color = ColorTextSecondary, fontSize = 12.sp)
         }
 
-        Spacer(modifier = Modifier.height(16.dp))  // Gap between slider and submit button
+        Spacer(modifier = Modifier.height(16.dp))
 
         // ── SUBMIT RATING BUTTON ──────────────────────────────────────────
-        // Styled identically to "ACCEPT THE MISSION" (gold fill, dark text, same corner radius).
-        // Tapping this calls onSubmit() → ViewModel.onSubmitReflection() → marks mission COMPLETE.
+        // Tapping this calls onSubmit() → ViewModel.onSubmitReflection()
+        // → XP added → bar animates → mission COMPLETED → slider hides → VIEW COMPLETION shown.
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(10.dp))
-                .background(ColorAccentGold)           // Gold fill — this is a primary action
-                .clickable(onClick = onSubmit)         // Calls ViewModel.onSubmitReflection()
+                .background(ColorAccentGold)
+                .clickable(onClick = onSubmit)
                 .padding(vertical = 14.dp)
         ) {
             Text(
-                text = "SUBMIT RATING",                // Direct, action-oriented label
-                color = Color(0xFF0D0D0D),             // Near-black text on gold — high contrast
+                text = "SUBMIT RATING",
+                color = Color(0xFF0D0D0D),
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.5.sp
@@ -1005,7 +1107,7 @@ private fun DiscomfortSliderSection(
  * DifficultyIndicator — renders 5 small dots representing difficulty level.
  *
  * Filled dots (white) = active difficulty level.
- * Hollow/dark dots = remaining difficulty tiers.
+ * Dark dots = remaining difficulty tiers.
  *
  * Example: difficulty=2 → filled filled empty empty empty
  *
@@ -1015,31 +1117,25 @@ private fun DiscomfortSliderSection(
 private fun DifficultyIndicator(difficulty: Int) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp)  // 5dp gap between each dot
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
     ) {
-        // Difficulty label
         Text(
             text = "DIFFICULTY",
             color = ColorTextSecondary,
             fontSize = 10.sp,
             letterSpacing = 1.sp,
-            modifier = Modifier.padding(end = 4.dp)         // Small gap between label and dots
+            modifier = Modifier.padding(end = 4.dp)
         )
 
-        // Draw exactly 5 dots — one per difficulty tier
         repeat(5) { index ->
-            // `index` goes from 0 to 4.
-            // A dot is "filled" (active) if its index + 1 is less than or equal to the difficulty level.
-            // e.g., difficulty=2 → indices 0 and 1 are filled, 2–4 are empty.
             val isFilled = index + 1 <= difficulty
-
             Box(
                 modifier = Modifier
-                    .size(7.dp)                                        // 7dp dot size — subtle but visible
-                    .clip(CircleShape)                                 // Perfect circle
+                    .size(7.dp)
+                    .clip(CircleShape)
                     .background(
-                        if (isFilled) ColorTextPrimary               // White dot = active difficulty tier
-                        else ColorSurfaceVariant                     // Dark dot = unused tier
+                        if (isFilled) ColorTextPrimary
+                        else ColorSurfaceVariant
                     )
             )
         }
@@ -1054,26 +1150,22 @@ private fun DifficultyIndicator(difficulty: Int) {
  * LoadingScreen — shown while DashboardViewModel is loading data.
  *
  * Displays a centred circular progress spinner + a "Loading..." label.
- * Simple and unobtrusive — the user should see this for only a brief moment.
  */
 @Composable
 private fun LoadingScreen() {
-    // Centre everything both horizontally and vertically in the screen
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            // Material 3 circular spinner — styled to the gold accent colour
             CircularProgressIndicator(
-                color = ColorAccentGold,              // Gold spinner matches the XP bar accent
-                modifier = Modifier.size(48.dp),      // 48dp is a comfortable spinner size
-                strokeWidth = 3.dp                   // Slightly thin stroke for a refined look
+                color = ColorAccentGold,
+                modifier = Modifier.size(48.dp),
+                strokeWidth = 3.dp
             )
 
-            Spacer(modifier = Modifier.height(16.dp))  // Gap between spinner and text
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // Loading label — unobtrusive, muted colour
             Text(
                 text = "Loading...",
                 color = ColorTextSecondary,
@@ -1090,9 +1182,7 @@ private fun LoadingScreen() {
 /**
  * ErrorScreen — shown if DashboardViewModel encountered an error loading data.
  *
- * Displays:
- *   - The error message from the ViewModel
- *   - A "RETRY" button that calls the ViewModel's onRefresh()
+ * Displays the error message and a RETRY button that calls ViewModel.onRefresh().
  *
  * @param message  The human-readable error message to display.
  * @param onRetry  Called when the user taps the Retry button.
@@ -1102,39 +1192,36 @@ private fun ErrorScreen(
     message: String,
     onRetry: () -> Unit
 ) {
-    // Centre everything both horizontally and vertically in the screen
     Box(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
         contentAlignment = Alignment.Center
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)  // 16dp gap between all children
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Error indicator — a plain "!" text marker
-            // Replace with an actual Icon composable from Material Icons Extended if desired
             Text(
                 text = "!",
-                color = Color(0xFFD32F2F),    // Red — signals an error state
+                color = Color(0xFFD32F2F),
                 fontSize = 48.sp,
                 fontWeight = FontWeight.Bold
             )
 
-            // Error message from the ViewModel
             Text(
                 text = message,
                 color = ColorTextSecondary,
                 fontSize = 14.sp,
-                textAlign = TextAlign.Center  // Centre the text so it wraps nicely
+                textAlign = TextAlign.Center
             )
 
-            // Retry button — gives the user a way to recover without force-quitting the app
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
                     .background(ColorSurface)
-                    .clickable(onClick = onRetry)             // Calls ViewModel.onRefresh()
+                    .clickable(onClick = onRetry)
                     .padding(horizontal = 24.dp, vertical = 12.dp)
             ) {
                 Text(
