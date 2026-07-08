@@ -1,237 +1,306 @@
+/*
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║        ⚠  AI ASSISTANT — READ THIS BEFORE EDITING THIS FILE  ⚠         ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ *
+ * PROJECT: Mission: Uncomfortable — Android app (Kotlin + Jetpack Compose)
+ *          Daily social-discomfort challenges. User accepts a mission → goes
+ *          and does it → returns → rates discomfort (1–10) → earns XP → ranks up.
+ *
+ * KEY FILES (read these for full context before making changes):
+ *   DashboardModels.kt     — All enums + data classes (Mission, Rank, XpProgress, MissionCategory) ← YOU ARE HERE
+ *   MissionRepository.kt   — Full mission library: 25 missions, 5 XP tiers, 6 categories
+ *   DashboardViewModel.kt  — All game logic: XP, streaks, rank-ups, history saving, core loop
+ *   DashboardScreen.kt     — Main UI. v5: SWAP MISSION button shows a popup, does NOT swap.
+ *   HistoryModels.kt       — CompletedMissionEntry data class
+ *   HistoryViewModel.kt    — Reads history from SharedPreferences JSON
+ *   HistoryScreen.kt       — Scrollable mission history UI
+ *   RankUpScreen.kt        — Full-screen rank-up celebration with spring animation
+ *   StatsViewModel.kt      — Computes stats (streaks, category breakdown, avg discomfort)
+ *   StatsScreen.kt         — Bar charts: category breakdown + discomfort by day of week
+ *
+ * ── COMMENTING RULES — NEVER break these ────────────────────────────────────
+ *
+ *   1. DO NOT remove any existing comment. If a comment is outdated, UPDATE it.
+ *      The developer relies on comments to understand decisions made earlier.
+ *      Deleting a comment is not allowed, even if the code seems obvious.
+ *
+ *   2. ADD comments to every new block of code you write:
+ *        • Every function         → KDoc block /** ... */ with @param / @return
+ *        • Every data class       → KDoc block on the class AND on every field
+ *        • Every enum value       → inline comment explaining what state it represents
+ *        • Every composable       → KDoc block + ── SECTION NAME ── dividers inside
+ *        • Every non-obvious line → inline comment explaining WHY, not just what
+ *
+ *   3. COMMENT STYLE used across this entire codebase (stay consistent):
+ *        • Section dividers  →  // ── SECTION NAME ─────────────────────────────
+ *        • KDoc blocks       →  /** ... */ above every function, class, data class
+ *        • Inline reasoning  →  // Why this decision was made (not just "what it does")
+ *
+ *   4. CHANGELOG: every file has a  ─── CHANGELOG ───  block in its file header.
+ *      When you make a significant change, add a line:
+ *        v3 — Short description of what changed and why.
+ *
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║  If you are an AI and you skip these rules, the developer will have to   ║
+ * ║  manually fix every file you touch. Please respect these conventions.    ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ */
+
 /**
  * DashboardModels.kt
  *
- * This file holds all the pure data models (data classes) used by the Dashboard screen.
- * These are simple Kotlin data classes — they just hold information, they don't DO anything.
+ * All data models used by the Dashboard, Mission Card, and History screens.
  *
- * Why separate models from the screen?
- *   Keeping data models in their own file makes them reusable across multiple screens,
- *   and it keeps DashboardScreen.kt focused purely on how things LOOK (UI), not what things ARE (data).
+ * ─── WHAT THIS FILE CONTAINS ────────────────────────────────────────────────
  *
- * In the future, these models will be populated from:
- *   - The local Room database (offline-first)
- *   - Supabase (synced in the background via WorkManager)
+ *   MissionStatus    — Enum: ACTIVE, IN_PROGRESS, COMPLETED, FAILED, LOCKED
+ *   MissionCategory  — Enum: 6 categories of discomfort (NEW in v2)
+ *   Rank             — Data class: level, title, description, XP threshold, badge resource ID
+ *   Mission          — Data class: full mission data including category (NEW in v2)
+ *   XpProgress       — Data class: current XP, rank, and progress bar fraction
+ *   ALL_RANKS        — The 5 ranks the user can achieve, in order
  *
- * ─── CHANGELOG ────────────────────────────────────────────────────────────────
- *   v2 — Added `objective` and `rules` fields to Mission for military briefing format.
- *        Added `isLocationDependent` to Mission to conditionally show "Swap Mission" button.
- *        Added `discomfortRating` to Mission to store the post-completion 1-10 slider rating.
+ * ─── WHERE THIS FILE LIVES ───────────────────────────────────────────────────
  *
- *   v3 — Added `xpThreshold` to Rank.
- *        This is the MINIMUM total XP a user must have to hold this rank.
- *        The ViewModel uses this to recalculate rank automatically whenever XP changes,
- *        removing any hardcoded threshold logic from business code.
- *        ALL_RANKS now includes thresholds for all 5 tiers.
+ *   app/src/main/java/com/example/missionuncomfortable/ui/dashboard/DashboardModels.kt
  *
- *   v4 — Wired real badge drawable resource IDs into each Rank.
- *        Each rank now points to its own unique badge drawable instead of the placeholder.
- *        RankBadgeSection in DashboardScreen uses rank.badgeResId to display the correct art.
+ * ─── CHANGELOG ───────────────────────────────────────────────────────────────
+ *
+ *   v1 — Initial version. MissionStatus, Rank, Mission, XpProgress, ALL_RANKS.
+ *
+ *   v2 — Phase 3 + Phase 5 updates:
+ *          1. MissionStatus: added IN_PROGRESS.
+ *             IN_PROGRESS means the user tapped ACCEPT and is out doing the mission.
+ *             The slider should NOT appear until the user returns and taps "I DID IT".
+ *          2. MissionCategory enum added (Phase 5).
+ *             6 categories: SOCIAL_INITIATION, EYE_CONTACT, REJECTION_PRACTICE,
+ *             PRESENCE, PHYSICAL, PERFORMANCE.
+ *             Used by the History and Stats screens to show category breakdowns.
+ *          3. Mission data class: added `category` field (default SOCIAL_INITIATION).
  */
 
 package com.example.missionuncomfortable.ui.dashboard
 
-import com.example.missionuncomfortable.R   // v4: needed to reference R.drawable.badge_* resource IDs
-
 // ─────────────────────────────────────────────────────────────────────────────
-// RANK MODEL
-// Represents a user's current rank/level in the gamification system.
-// Ranks range from Level 1 (The Observer) to Level 5 (The Sovereign).
+// MISSION STATUS ENUM
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Rank — describes one of the 5 rank tiers a user can achieve.
+ * MissionStatus — the lifecycle state of a daily mission.
  *
- * @param level         The numeric rank level (1 through 5).
- * @param title         The display name of the rank (e.g., "The Observer", "The Sovereign").
- * @param description   A short flavour-text description of what this rank represents.
- * @param xpThreshold   v3: The minimum total XP required to hold this rank.
- *                      The ViewModel calls calculateXpProgress(totalXp) which walks this list
- *                      to find the highest rank whose xpThreshold is still <= the user's total XP.
- *                      To tune rank-up requirements, only edit the values here — nothing else
- *                      in the codebase needs to change.
+ * ACTIVE      → The mission has been assigned but the user has not yet accepted it.
+ *               The "ACCEPT THE MISSION" gold button is shown.
  *
- *                      Current thresholds:
- *                        Level 1 (Observer):   0 XP   — starting rank
- *                        Level 2 (Initiate):   200 XP
- *                        Level 3 (Challenger): 500 XP
- *                        Level 4 (Conqueror):  900 XP
- *                        Level 5 (Sovereign):  1400 XP
+ * IN_PROGRESS → The user tapped ACCEPT and is currently out doing the mission.
+ *               NEW in v2 (Phase 3). The card shows "MISSION IN PROGRESS" with
+ *               "I DID IT" and "I COULDN'T DO IT" buttons.
+ *               Persisted to SharedPreferences (key: "mission_status" = "IN_PROGRESS")
+ *               so it survives the user pressing the home button.
  *
- * @param badgeResId    v4: The drawable resource ID for the rank's unique badge image.
- *                      Each rank now has its own distinct artwork:
- *                        Level 1 → R.drawable.badge_observer   (open eye)
- *                        Level 2 → R.drawable.badge_initiate   (single chevron)
- *                        Level 3 → R.drawable.badge_challenger (shield + sword)
- *                        Level 4 → R.drawable.badge_conqueror  (eagle wings)
- *                        Level 5 → R.drawable.badge_sovereign  (military crown)
- *                      RankBadgeSection reads this field — no other code needs updating
- *                      when badge art changes. To swap an image, only edit the entry here.
+ * COMPLETED   → The user returned, tapped "I DID IT", rated their discomfort,
+ *               and tapped SUBMIT RATING. XP has been awarded.
+ *               The "VIEW COMPLETION" button is shown.
+ *
+ * FAILED      → The day ended without the user completing the mission.
+ *               Reserved for future enforcement (e.g., a midnight reset job).
+ *               Currently not set anywhere — included for future use.
+ *
+ * LOCKED      → The mission is not yet available at the user's current rank.
+ *               Reserved for future use when mission tiers are enforced by rank.
+ */
+enum class MissionStatus {
+    ACTIVE,        // Assigned but not yet accepted
+    IN_PROGRESS,   // User tapped ACCEPT — they are out doing it right now (NEW v2)
+    COMPLETED,     // User returned, rated it, XP awarded
+    FAILED,        // Day ended without completion (future enforcement)
+    LOCKED         // Not yet unlocked for this rank tier (future use)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MISSION CATEGORY ENUM (NEW in v2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * MissionCategory — the type of discomfort this mission primarily targets.
+ *
+ * NEW in v2 (Phase 5). Used by:
+ *   - MissionRepository: each mission is tagged with a category.
+ *   - HistoryScreen: shows the category for each completed mission row.
+ *   - StatsScreen: computes "most completed category" from history.
+ *   - (Future) Mission selection: surface missions in weak categories first.
+ *
+ * The 6 categories cover the full range of social discomfort the app targets:
+ */
+enum class MissionCategory {
+    SOCIAL_INITIATION,   // Starting conversations, approaching strangers
+    EYE_CONTACT,         // Direct, sustained eye contact in public
+    REJECTION_PRACTICE,  // Asking for something expecting to be refused
+    PRESENCE,            // Being fully present without distraction or escape
+    PHYSICAL,            // Physical discomfort the body resists (cold showers, etc.)
+    PERFORMANCE          // Speaking in front of others, being visibly active
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RANK DATA CLASS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Rank — represents one of the 5 achievable ranks.
+ *
+ * @param level        Numeric rank level, 1–5. Level 1 is the starting rank.
+ * @param title        Display name. e.g. "The Observer".
+ * @param description  Short flavour text shown under the badge. e.g. "You are watching."
+ * @param xpRequired   The total XP needed to reach (and hold) this rank.
+ *                     Level 1 starts at 0 XP.
+ * @param badgeResId   Android drawable resource ID for the rank badge image.
+ *                     Null if no badge has been created yet (app will crash in testing
+ *                     via checkNotNull() — this is intentional, to catch missing badges).
  */
 data class Rank(
-    val level: Int,                    // Numeric level: 1, 2, 3, 4, or 5
-    val title: String,                 // Human-readable title shown in the UI
-    val description: String,          // Flavour text describing the rank
-    val xpThreshold: Int,              // v3: Min total XP required to enter this rank
-    val badgeResId: Int? = null        // v4: Drawable resource ID for this rank's badge
+    val level: Int,
+    val title: String,
+    val description: String,
+    val xpRequired: Int,
+    val badgeResId: Int? = null   // Set to R.drawable.badge_xxx for each rank
 )
 
-// A hardcoded list of all 5 possible ranks.
-// This is the single source of truth for rank names, descriptions, XP thresholds, and badge art.
-// The ViewModel reads this list to determine rank boundaries after XP changes.
-// To change rank names, descriptions, XP costs, or badge art, only edit here.
+// ─────────────────────────────────────────────────────────────────────────────
+// ALL RANKS — the 5 ranks in order
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * ALL_RANKS — the complete ordered list of achievable ranks.
+ *
+ * The user starts at Level 1 (The Observer) and advances by earning XP.
+ * Rank level is determined by total XP, not by streak or missions completed.
+ *
+ * XP thresholds:
+ *   Level 1 — The Observer    →    0 XP  (starting rank)
+ *   Level 2 — The Initiate    →  200 XP  (~2 weeks of daily missions)
+ *   Level 3 — The Challenger  →  500 XP  (~5 weeks of daily missions)
+ *   Level 4 — The Conqueror   →  900 XP  (~9 weeks of daily missions)
+ *   Level 5 — The Sovereign   → 1500 XP  (~15 weeks of daily missions)
+ *
+ * Badge drawable resource IDs must be set once the drawables are created.
+ * Replace the null values below with the actual R.drawable.xxx resource IDs.
+ */
 val ALL_RANKS = listOf(
-    // Level 1 — Beginner. The user is just starting out, watching the world around them.
     Rank(
-        level = 1,
-        title = "The Observer",
-        description = "You watch from the sidelines. The first step is awareness.",
-        xpThreshold = 0,                         // Starting rank — everyone begins at 0 XP
-        badgeResId = R.drawable.badge_observer   // Open eye — watching, not yet acting
+        level       = 1,
+        title       = "The Observer",
+        description = "You are watching. The first step is noticing.",
+        xpRequired  = 0,
+        badgeResId  = null   // Replace with R.drawable.badge_observer
     ),
-    // Level 2 — The user has started taking small, tentative social steps.
     Rank(
-        level = 2,
-        title = "The Initiate",
-        description = "You've taken your first uncomfortable step. Keep moving.",
-        xpThreshold = 200,                       // Reached at 200 total XP
-        badgeResId = R.drawable.badge_initiate   // Single military chevron — one stripe earned
+        level       = 2,
+        title       = "The Initiate",
+        description = "You have begun. Most people never do.",
+        xpRequired  = 200,
+        badgeResId  = null   // Replace with R.drawable.badge_initiate
     ),
-    // Level 3 — The user regularly engages in mild-to-moderate discomfort.
     Rank(
-        level = 3,
-        title = "The Challenger",
-        description = "Discomfort is now familiar. You push through anyway.",
-        xpThreshold = 500,                         // Reached at 500 total XP
-        badgeResId = R.drawable.badge_challenger   // Shield + sword — actively fighting
+        level       = 3,
+        title       = "The Challenger",
+        description = "You seek difficulty on purpose. That is rare.",
+        xpRequired  = 500,
+        badgeResId  = null   // Replace with R.drawable.badge_challenger
     ),
-    // Level 4 — The user actively seeks out difficult social situations.
     Rank(
-        level = 4,
-        title = "The Conqueror",
-        description = "You don't avoid hard things. You walk straight into them.",
-        xpThreshold = 900,                        // Reached at 900 total XP
-        badgeResId = R.drawable.badge_conqueror   // Eagle wings spread — dominant, commanding
+        level       = 4,
+        title       = "The Conqueror",
+        description = "Discomfort does not stop you. It fuels you.",
+        xpRequired  = 900,
+        badgeResId  = null   // Replace with R.drawable.badge_conqueror
     ),
-    // Level 5 — The pinnacle. The user has mastered social resilience.
     Rank(
-        level = 5,
-        title = "The Sovereign",
-        description = "You command your environment. Nothing is impossible.",
-        xpThreshold = 1400,                      // Reached at 1400 total XP — the final rank
-        badgeResId = R.drawable.badge_sovereign  // Military crown — the pinnacle
+        level       = 5,
+        title       = "The Sovereign",
+        description = "You have become someone who cannot be intimidated.",
+        xpRequired  = 1500,
+        badgeResId  = null   // Replace with R.drawable.badge_sovereign
     )
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
-// XP MODEL
-// Tracks the user's current experience points and calculates progress.
+// MISSION DATA CLASS
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * XpProgress — holds all XP-related info needed to render the progress bar.
+ * Mission — a single daily mission assignment.
  *
- * @param currentXp         How much XP the user has earned so far in total.
- * @param xpForCurrentRank  The XP threshold at which the user ENTERED their current rank.
- * @param xpForNextRank     The XP threshold at which the user will reach the NEXT rank.
- *                          If the user is at max rank (5), this equals currentXp — progress is "full".
- * @param currentRank       The user's current Rank object (see Rank data class above).
- */
-data class XpProgress(
-    val currentXp: Int,                // e.g., 350 XP total earned
-    val xpForCurrentRank: Int,         // e.g., 200 XP (threshold to enter current rank)
-    val xpForNextRank: Int,            // e.g., 500 XP (threshold to reach next rank)
-    val currentRank: Rank              // The current Rank object for title, badge, etc.
-) {
-    /**
-     * progressFraction — calculates what fraction of the current rank's XP bar is filled.
-     *
-     * Example:
-     *   currentXp = 350, xpForCurrentRank = 200, xpForNextRank = 500
-     *   → (350 - 200) / (500 - 200) = 150 / 300 = 0.5  (50% of the way to next rank)
-     *
-     * Clamped to [0f, 1f] so we never get a negative or >100% bar (just in case of data errors).
-     */
-    val progressFraction: Float
-        get() {
-            // Avoid division by zero if xpForNextRank somehow equals xpForCurrentRank
-            val range = xpForNextRank - xpForCurrentRank
-            if (range <= 0) return 1f  // If at max rank or bad data, show full bar
-
-            // Calculate raw progress fraction
-            val rawProgress = (currentXp - xpForCurrentRank).toFloat() / range.toFloat()
-
-            // Clamp between 0.0 and 1.0 so the progress bar never breaks
-            return rawProgress.coerceIn(0f, 1f)
-        }
-
-    /**
-     * xpUntilNextRank — a convenience property for displaying "X XP until next rank".
-     * Returns 0 if the user is already at or beyond the next rank threshold.
-     */
-    val xpUntilNextRank: Int
-        get() = (xpForNextRank - currentXp).coerceAtLeast(0)
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// MISSION MODEL
-// Represents a single daily mission assigned to the user.
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * MissionStatus — an enum describing what state a mission is currently in.
+ * @param id                  Stable unique string ID. e.g. "cold_open".
+ *                            Never change this after shipping — it is used as the
+ *                            missionId in CompletedMissionEntry history records.
  *
- * Using an enum (rather than a plain string) lets us write safe `when` statements
- * that the compiler will warn us about if we forget a case.
- */
-enum class MissionStatus {
-    ACTIVE,     // The user has been assigned the mission and hasn't completed it yet
-    COMPLETED,  // The user has submitted their discomfort rating and marked it done
-    FAILED,     // The mission expired (day ended) without a completion submission
-    LOCKED      // The user hasn't unlocked this difficulty tier yet (future use)
-}
-
-/**
- * Mission — describes a single daily challenge assigned to the user.
+ * @param title               Display title. e.g. "The Cold Open".
  *
- * ─── v2 CHANGES ────────────────────────────────────────────────────────────
- *   - Added `objective`:           A single clear sentence stating WHAT the user must do.
- *                                  Shown as the "OBJECTIVE" section in the military briefing format.
+ * @param objective           Single sentence: what the user must do.
  *
- *   - Added `rules`:               A list of specific constraints/steps for the mission.
- *                                  Shown as the "RULES" section in the military briefing format.
- *                                  Replaces the old monolithic `description` paragraph.
+ * @param rules               Ordered list of specific constraints.
+ *                            Displayed as a numbered list in the mission card.
  *
- *   - Added `isLocationDependent`: True if the mission requires the user to travel to a
- *                                  specific type of place (e.g., a coffee shop, a park, a mall).
- *                                  When true, the "Swap Mission" button is shown on the card,
- *                                  allowing the user to swap to a non-location-dependent mission.
+ * @param xpReward            XP awarded on completion.
  *
- *   - Added `discomfortRating`:    The user's submitted 1-10 discomfort rating for this mission.
- *                                  Null means the user hasn't submitted a rating yet.
- *                                  Populated when the user submits the post-mission discomfort slider.
- * ───────────────────────────────────────────────────────────────────────────
+ * @param status              Current lifecycle state of the mission.
+ *                            Set to ACTIVE for all missions in the repository.
+ *                            Updated by DashboardViewModel as the user progresses.
  *
- * @param id                 A unique identifier for this mission (will be a UUID from Supabase in production).
- * @param title              Short title of the mission, e.g. "The Silent Stranger".
- * @param objective          A single clear sentence: WHAT must the user do? (military briefing: OBJECTIVE block).
- * @param rules              A list of specific constraints and steps (military briefing: RULES block).
- * @param xpReward           How much XP the user earns for completing this mission.
- * @param status             Current status of the mission (see MissionStatus enum above).
- * @param difficulty         A 1–5 difficulty rating. Higher rank users get harder missions.
- * @param dateAssigned       The date this mission was assigned (ISO-8601 string, e.g. "2026-07-05").
- * @param isLocationDependent True if the mission requires travelling to a specific type of location.
- *                            Shows the "Swap Mission" button on the card when true.
- * @param discomfortRating   The user's submitted 1–10 discomfort rating. Null = not yet submitted.
+ * @param difficulty          1–5 difficulty rating. Shown as filled/empty dots on the card.
+ *
+ * @param dateAssigned        The date this mission was assigned, "yyyy-MM-dd".
+ *                            Set by DashboardViewModel when the mission is loaded for the day.
+ *                            Empty string ("") in the repository — filled at runtime.
+ *
+ * @param isLocationDependent True if the mission requires the user to leave the house.
+ *                            When true, the "SWAP MISSION" button is shown on the card.
+ *                            (In v5, SWAP MISSION shows a motivational popup instead of swapping.)
+ *
+ * @param discomfortRating    The user's 1–10 self-reported discomfort rating after completion.
+ *                            Null until the user submits a rating.
+ *
+ * @param category            The type of discomfort this mission targets. (NEW in v2)
+ *                            Used by History and Stats screens.
  */
 data class Mission(
-    val id: String,                                // Unique ID — will come from Supabase later
-    val title: String,                             // Short display title
-    val objective: String,                         // Single-sentence objective (what to do)
-    val rules: List<String>,                       // Ordered list of rules/constraints for the mission
-    val xpReward: Int,                             // XP granted on completion (e.g., 75)
-    val status: MissionStatus,                     // Current state (ACTIVE, COMPLETED, etc.)
-    val difficulty: Int,                           // Difficulty tier 1–5
-    val dateAssigned: String,                      // Date string, e.g. "2026-07-05"
-    val isLocationDependent: Boolean = false,      // True = user must travel somewhere specific
-    val discomfortRating: Int? = null             // 1–10 discomfort rating, null = not yet submitted
+    val id: String,
+    val title: String,
+    val objective: String,
+    val rules: List<String>,
+    val xpReward: Int,
+    val status: MissionStatus,
+    val difficulty: Int,
+    val dateAssigned: String,
+    val isLocationDependent: Boolean = false,
+    val discomfortRating: Int? = null,
+    val category: MissionCategory = MissionCategory.SOCIAL_INITIATION   // NEW in v2
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// XP PROGRESS DATA CLASS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * XpProgress — a snapshot of the user's current XP and rank progress.
+ *
+ * Computed by DashboardViewModel.calculateXpProgress() from the user's total XP.
+ * Passed to XpProgressSection and DailyCompleteScreen for display.
+ *
+ * @param currentXp         The user's total accumulated XP.
+ * @param currentRank       The rank the user currently holds (based on total XP).
+ * @param xpForNextRank     The total XP needed to reach the next rank.
+ *                          0 if the user is at max rank (Level 5).
+ * @param xpUntilNextRank   How many more XP the user needs to rank up.
+ *                          0 if the user is at max rank.
+ * @param progressFraction  A 0.0–1.0 float representing fill level of the XP progress bar.
+ *                          0.0 = just entered this rank. 1.0 = about to rank up.
+ *                          Used by animateFloatAsState in XpProgressSection.
+ */
+data class XpProgress(
+    val currentXp: Int,
+    val currentRank: Rank,
+    val xpForNextRank: Int,
+    val xpUntilNextRank: Int,
+    val progressFraction: Float
 )
