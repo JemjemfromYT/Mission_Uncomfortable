@@ -103,10 +103,10 @@
 package com.example.missionuncomfortable.ui.dashboard
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
-import androidx.preference.PreferenceManager
 import com.example.missionuncomfortable.data.MissionRepository
 import com.example.missionuncomfortable.ui.history.CompletedMissionEntry
 import java.text.SimpleDateFormat
@@ -161,7 +161,9 @@ data class DashboardUiState(
 class DashboardViewModel(application: Application) : AndroidViewModel(application) {
 
     // ── SHARED PREFERENCES ────────────────────────────────────────────────────
-    private val prefs = PreferenceManager.getDefaultSharedPreferences(application)
+    // Using getSharedPreferences directly — androidx.preference is not in this project's deps.
+    // PREFS_NAME must match across DashboardViewModel, HistoryViewModel, and StatsViewModel.
+    private val prefs = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     // ── DATE FORMATTER ────────────────────────────────────────────────────────
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.UK)
@@ -169,6 +171,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
     // ── SHARED PREFERENCES KEYS ───────────────────────────────────────────────
     private companion object {
+        // SharedPreferences file name — must match in HistoryViewModel and StatsViewModel.
+        // All three ViewModels read/write the same prefs file.
+        const val PREFS_NAME = "mission_uncomfortable_prefs"
+
         // XP + Rank
         const val KEY_TOTAL_XP             = "total_xp"
         const val KEY_LAST_COMPLETED_DATE  = "last_completed_date"
@@ -226,11 +232,15 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
                 else          -> MissionStatus.ACTIVE
             }
         } else {
-            // New day — reset status
-            prefs.edit()
-                .putString(KEY_MISSION_STATUS, "ACTIVE")
-                .putString(KEY_MISSION_ID, mission.id)
-                .apply()
+            // New day — reset status.
+            // Using commit() instead of apply() here and throughout this file.
+            // Reason: Kotlin's generic apply { } extension conflicts with
+            // SharedPreferences.Editor.apply() when chained, causing a
+            // "Cannot infer type for T" compile error.
+            val editor = prefs.edit()
+            editor.putString(KEY_MISSION_STATUS, "ACTIVE")
+            editor.putString(KEY_MISSION_ID, mission.id)
+            editor.commit()
             MissionStatus.ACTIVE
         }
 
@@ -278,10 +288,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         val mission = current.todaysMission ?: return
 
         // Persist IN_PROGRESS to SharedPreferences
-        prefs.edit()
-            .putString(KEY_MISSION_STATUS, "IN_PROGRESS")
-            .putString(KEY_MISSION_ID, mission.id)
-            .apply()
+        // Using explicit editor variable to avoid Kotlin apply { } ambiguity (see comment above).
+        val editor = prefs.edit()
+        editor.putString(KEY_MISSION_STATUS, "IN_PROGRESS")
+        editor.putString(KEY_MISSION_ID, mission.id)
+        editor.commit()
 
         _uiState.value = current.copy(
             todaysMission     = mission.copy(status = MissionStatus.IN_PROGRESS),
@@ -315,9 +326,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         val current = _uiState.value ?: return
         val mission = current.todaysMission ?: return
 
-        prefs.edit()
-            .putString(KEY_MISSION_STATUS, "ACTIVE")
-            .apply()
+        val editor = prefs.edit()
+        editor.putString(KEY_MISSION_STATUS, "ACTIVE")
+        editor.commit()
 
         _uiState.value = current.copy(
             todaysMission     = mission.copy(status = MissionStatus.ACTIVE),
@@ -358,7 +369,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         // ── Step 1: Award XP ──────────────────────────────────────────────────
         val oldTotalXp  = prefs.getInt(KEY_TOTAL_XP, 0)
         val newTotalXp  = oldTotalXp + mission.xpReward
-        prefs.edit().putInt(KEY_TOTAL_XP, newTotalXp).apply()
+        prefs.edit().putInt(KEY_TOTAL_XP, newTotalXp).commit()
 
         // Compute old rank and new rank
         val oldXpProgress = calculateXpProgress(oldTotalXp)
@@ -369,7 +380,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         val bestStreak    = prefs.getInt(KEY_BEST_STREAK, 0)
         val isPersonalBest = newStreakCount > bestStreak
         if (isPersonalBest) {
-            prefs.edit().putInt(KEY_BEST_STREAK, newStreakCount).apply()
+            prefs.edit().putInt(KEY_BEST_STREAK, newStreakCount).commit()
         }
 
         // ── Step 3: Save history entry ────────────────────────────────────────
@@ -380,10 +391,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         )
 
         // ── Step 4: Mark mission as completed in SharedPreferences ────────────
-        prefs.edit()
-            .putString(KEY_MISSION_STATUS, "COMPLETED")
-            .putString(KEY_LAST_COMPLETED_DATE, today())
-            .apply()
+        val completionEditor = prefs.edit()
+        completionEditor.putString(KEY_MISSION_STATUS, "COMPLETED")
+        completionEditor.putString(KEY_LAST_COMPLETED_DATE, today())
+        completionEditor.commit()
 
         val completedMission = mission.copy(
             status           = MissionStatus.COMPLETED,
@@ -492,10 +503,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             else            -> 1                      // Broken streak — reset to 1
         }
 
-        prefs.edit()
-            .putInt(KEY_STREAK_COUNT, newStreak)
-            .putString(KEY_LAST_STREAK_DATE, todayString)
-            .apply()
+        val streakEditor = prefs.edit()
+        streakEditor.putInt(KEY_STREAK_COUNT, newStreak)
+        streakEditor.putString(KEY_LAST_STREAK_DATE, todayString)
+        streakEditor.commit()
 
         return newStreak
     }
@@ -539,9 +550,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             "[" + newEntry + "," + existing.substring(1)
         }
 
-        prefs.edit()
-            .putString(KEY_HISTORY_JSON, updatedJson)
-            .apply()
+        prefs.edit().putString(KEY_HISTORY_JSON, updatedJson).commit()
     }
 
     // ─────────────────────────────────────────────────────────────────────────

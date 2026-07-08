@@ -83,14 +83,17 @@
 package com.example.missionuncomfortable.ui.stats
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
-import androidx.preference.PreferenceManager
 import com.example.missionuncomfortable.ui.dashboard.MissionCategory
 import com.example.missionuncomfortable.ui.history.CompletedMissionEntry
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
+import java.text.SimpleDateFormat
+import java.util.*
+// NOTE: java.time.* was intentionally NOT used here.
+// java.time.LocalDate and DateTimeFormatter require API level 26.
+// This app's minSdk is 24, so all date handling uses Calendar + SimpleDateFormat.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // STATS DATA CLASS
@@ -128,11 +131,17 @@ data class StatsData(
 
 class StatsViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val prefs = PreferenceManager.getDefaultSharedPreferences(application)
-    private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+    // Using getSharedPreferences directly — androidx.preference is not in deps.
+    // PREFS_NAME must match across DashboardViewModel, HistoryViewModel, and StatsViewModel.
+    private val prefs = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    // SimpleDateFormat for API 24 compatibility.
+    // java.time.DateTimeFormatter requires API 26 — not used here.
+    private val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US)
 
     private companion object {
         const val KEY_HISTORY_JSON = "mission_history_json"
+        const val PREFS_NAME       = "mission_uncomfortable_prefs"  // Must match DashboardViewModel
     }
 
     private val _stats = MutableLiveData<StatsData>()
@@ -182,16 +191,24 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
             .mapValues { it.value.size }
 
         // ── DISCOMFORT BY DAY OF WEEK ─────────────────────────────────────────
-        // Build a map of DayOfWeek (1=Mon ... 7=Sun) → list of ratings.
+        // Build a map of day-of-week (1=Mon ... 7=Sun) → list of ratings.
         // Then average per day. Index 0 in result = Monday.
+        //
+        // Uses Calendar instead of java.time.DayOfWeek — java.time requires API 26,
+        // minSdk is 24. Calendar.DAY_OF_WEEK values: 1=Sunday, 2=Monday … 7=Saturday.
+        // We remap to: Monday=1, Tuesday=2 … Saturday=6, Sunday=7.
         val ratingsByDow = mutableMapOf<Int, MutableList<Int>>()
         entries.forEach { entry ->
             try {
-                val date = LocalDate.parse(entry.date, dateFormatter)
-                val dow = date.dayOfWeek.value  // 1 = Monday, 7 = Sunday
+                val parsedDate = sdf.parse(entry.date) ?: return@forEach
+                val cal = Calendar.getInstance(Locale.US)
+                cal.time = parsedDate
+                val calDow = cal.get(Calendar.DAY_OF_WEEK)  // 1=Sun, 2=Mon, ... 7=Sat
+                // Remap: Mon=1 ... Sat=6, Sun=7
+                val dow = if (calDow == Calendar.SUNDAY) 7 else calDow - 1
                 ratingsByDow.getOrPut(dow) { mutableListOf() }.add(entry.discomfortRating)
             } catch (e: Exception) {
-                // Skip malformed dates
+                // Skip entries with malformed date strings
             }
         }
         // Build 7-item list: index 0 = Mon (dow=1), index 6 = Sun (dow=7)
@@ -224,59 +241,93 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
      *
      * @return Pair(currentStreak, bestStreak)
      */
+    /**
+     * computeStreaks — derives currentStreak and bestStreak from the history entries.
+     *
+     * Converts each completion date to an "epoch day" (days since 1970-01-01) so
+     * consecutive-day comparisons are simple integer arithmetic (diff == 1L).
+     *
+     * Uses Calendar + SimpleDateFormat instead of java.time.LocalDate because
+     * java.time requires API 26 and this app's minSdk is 24.
+     *
+     * @return Pair(currentStreak, bestStreak)
+     */
     private fun computeStreaks(entries: List<CompletedMissionEntry>): Pair<Int, Int> {
-        val today     = LocalDate.now()
-        val yesterday = today.minusDays(1)
+        val todayEpoch     = dateToEpochDay(sdf.format(Date()))
+        val yesterdayEpoch = todayEpoch - 1
 
-        // Unique completion dates, sorted ascending
-        val dates = entries
+        // Unique completion epoch-days, sorted ascending.
+        // Using epoch days (Long) instead of date strings for arithmetic correctness.
+        val epochDays = entries
             .mapNotNull { entry ->
-                try { LocalDate.parse(entry.date, dateFormatter) }
+                try { dateToEpochDay(entry.date) }
                 catch (e: Exception) { null }
             }
             .toSortedSet()
             .toList()
 
-        if (dates.isEmpty()) return Pair(0, 0)
+        if (epochDays.isEmpty()) return Pair(0, 0)
 
-        // Walk the sorted dates and compute all streak lengths
-        var maxStreak     = 1
-        var currentLen    = 1
-        var lastDate      = dates[0]
+        // Walk sorted epoch days and track the best consecutive run
+        var maxStreak  = 1
+        var currentLen = 1
+        var lastDay    = epochDays[0]
 
-        for (i in 1 until dates.size) {
-            val diff = dates[i].toEpochDay() - lastDate.toEpochDay()
+        for (i in 1 until epochDays.size) {
+            val diff = epochDays[i] - lastDay
             if (diff == 1L) {
+                // Consecutive day — extend current run
                 currentLen++
                 if (currentLen > maxStreak) maxStreak = currentLen
             } else {
+                // Gap — reset current run
                 currentLen = 1
             }
-            lastDate = dates[i]
+            lastDay = epochDays[i]
         }
 
-        // currentStreak = length of the streak ending today or yesterday
-        val mostRecent = dates.last()
+        // currentStreak = the run ending at today or yesterday
+        val mostRecentDay = epochDays.last()
         val currentStreak = when {
-            mostRecent == today || mostRecent == yesterday -> {
-                // Walk backwards from the most recent date to find the streak length
+            mostRecentDay == todayEpoch || mostRecentDay == yesterdayEpoch -> {
+                // Walk backwards from most recent to measure the active streak
                 var streak = 1
-                var prev   = mostRecent
-                for (i in dates.size - 2 downTo 0) {
-                    val diff = prev.toEpochDay() - dates[i].toEpochDay()
+                var prev   = mostRecentDay
+                for (i in epochDays.size - 2 downTo 0) {
+                    val diff = prev - epochDays[i]
                     if (diff == 1L) {
                         streak++
-                        prev = dates[i]
+                        prev = epochDays[i]
                     } else {
                         break
                     }
                 }
                 streak
             }
-            else -> 0   // Most recent completion was before yesterday — streak broken
+            else -> 0   // Most recent completion was before yesterday — streak is broken
         }
 
         return Pair(currentStreak, maxStreak)
+    }
+
+    /**
+     * dateToEpochDay — converts a "yyyy-MM-dd" string to an epoch day number.
+     *
+     * Epoch day = number of days since 1970-01-01 (UTC midnight).
+     * Used for date arithmetic instead of java.time.LocalDate.toEpochDay(),
+     * which requires API 26. Two dates are consecutive if their epoch days differ by 1.
+     *
+     * @param dateStr  Date string in "yyyy-MM-dd" format (matches sdf pattern).
+     * @return The epoch day as a Long. Returns 0L if dateStr cannot be parsed.
+     */
+    private fun dateToEpochDay(dateStr: String): Long {
+        return try {
+            val date = sdf.parse(dateStr) ?: return 0L
+            // Convert milliseconds since epoch to days since epoch
+            date.time / (24L * 60L * 60L * 1000L)
+        } catch (e: Exception) {
+            0L
+        }
     }
 
     // ── SHARED PREFERENCES JSON PARSING ──────────────────────────────────────

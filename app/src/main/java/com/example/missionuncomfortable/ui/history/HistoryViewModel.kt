@@ -94,21 +94,23 @@
 package com.example.missionuncomfortable.ui.history
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
-import androidx.preference.PreferenceManager
 
 class HistoryViewModel(application: Application) : AndroidViewModel(application) {
 
     // ── SHARED PREFERENCES ────────────────────────────────────────────────────
     // Same preferences file used by DashboardViewModel — they share data through
     // SharedPreferences as the interim storage layer.
-    private val prefs = PreferenceManager.getDefaultSharedPreferences(application)
+    // PREFS_NAME must match across DashboardViewModel, HistoryViewModel, and StatsViewModel.
+    private val prefs = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     // ── KEY CONSTANTS ─────────────────────────────────────────────────────────
     private companion object {
         const val KEY_HISTORY_JSON = "mission_history_json"   // JSON array of completed entries
+        const val PREFS_NAME       = "mission_uncomfortable_prefs"  // Must match DashboardViewModel
     }
 
     // ── LIVE DATA ─────────────────────────────────────────────────────────────
@@ -227,13 +229,13 @@ class HistoryViewModel(application: Application) : AndroidViewModel(application)
      */
     private fun extractInt(json: String, key: String): Int {
         val marker = "\"$key\":"
-        val start = json.indexOf(marker) + marker.length
-        // Read digits until we hit a non-digit character (comma, }, space)
-        val end = json.indexOfFirst { it == ',' || it == '}' || it == ' ' }.let { idx ->
-            var i = start
-            while (i < json.length && json[i].isDigit()) i++
-            i
-        }
+        val start  = json.indexOf(marker) + marker.length
+        // Walk forward from start while the character is a digit.
+        // Bug fix (v2): previous version called indexOfFirst { } but never used its result (idx).
+        // The result was always computed from the while loop below, making indexOfFirst wasted.
+        // Fix: removed the dead indexOfFirst call entirely. Only the while loop matters.
+        var end = start
+        while (end < json.length && json[end].isDigit()) end++
         return json.substring(start, end).trim().toInt()
     }
 

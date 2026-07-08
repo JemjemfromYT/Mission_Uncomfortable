@@ -78,6 +78,7 @@ package com.example.missionuncomfortable.ui.stats
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import java.util.Locale
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -195,7 +196,8 @@ fun StatsScreen(
                         StatSummaryRow(
                             label = "Average discomfort",
                             value = data.averageDiscomfort?.let {
-                                String.format("%.1f / 10", it)
+                                // Locale.US ensures decimal point is always '.' not ','
+                                String.format(Locale.US, "%.1f / 10", it)
                             } ?: "—"
                         )
                         StatSummaryRow(
