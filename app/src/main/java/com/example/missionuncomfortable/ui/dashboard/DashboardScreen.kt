@@ -237,6 +237,8 @@ fun DashboardScreen(
                         },
                         onAcceptMission = { viewModel.onAcceptMission() },
                         onSwapMission = { viewModel.onSwapMission() },
+                        onMissionDone = { viewModel.onMissionDone() },           // v6: "I DID IT"
+                        onMissionAbandoned = { viewModel.onMissionAbandoned() }, // v6: "I COULDN'T DO IT"
                         onDiscomfortRatingChanged = { rating -> viewModel.onDiscomfortRatingChanged(rating) },
                         onSubmitReflection = { viewModel.onSubmitReflection() },
                         onViewCompletion = { viewModel.onViewCompletion() }  // v3: new callback
@@ -257,6 +259,7 @@ fun DashboardScreen(
  * Uses a vertically scrollable Column so the screen works on small devices too.
  *
  * v3: Added onViewCompletion parameter and passes it down to MissionCard.
+ * v6: Added onMissionDone and onMissionAbandoned for the IN_PROGRESS return flow.
  *
  * @param xpProgress               The XP and rank progress data to display.
  * @param todaysMission            The mission assigned to the user today.
@@ -268,6 +271,8 @@ fun DashboardScreen(
  *                                 NOTE (v5): The SWAP MISSION button no longer calls this directly.
  *                                 Instead, it shows a motivational popup (SwapBlockedDialog).
  *                                 This parameter is kept for future use (e.g., allow swap after a penalty).
+ * @param onMissionDone            v6: Called when the user taps "I DID IT".
+ * @param onMissionAbandoned       v6: Called when the user taps "I COULDN'T DO IT".
  * @param onDiscomfortRatingChanged Called continuously as the user drags the slider.
  * @param onSubmitReflection       Called when the user taps "SUBMIT RATING".
  * @param onViewCompletion         v3: Called when the user taps "VIEW COMPLETION" on a COMPLETED mission.
@@ -282,6 +287,8 @@ private fun DashboardContent(
     onMissionClicked: () -> Unit,
     onAcceptMission: () -> Unit,
     onSwapMission: () -> Unit,
+    onMissionDone: () -> Unit,               // v6: "I DID IT" → shows discomfort slider
+    onMissionAbandoned: () -> Unit,          // v6: "I COULDN'T DO IT" → resets to ACTIVE
     onDiscomfortRatingChanged: (Int) -> Unit,
     onSubmitReflection: () -> Unit,
     onViewCompletion: () -> Unit              // v3: new parameter
@@ -326,6 +333,8 @@ private fun DashboardContent(
             onCardClicked = onMissionClicked,
             onAcceptMission = onAcceptMission,
             onSwapMission = onSwapMission,
+            onMissionDone = onMissionDone,               // v6: passed through to "I DID IT" button
+            onMissionAbandoned = onMissionAbandoned,     // v6: passed through to "I COULDN'T DO IT" button
             onDiscomfortRatingChanged = onDiscomfortRatingChanged,
             onSubmitReflection = onSubmitReflection,
             onViewCompletion = onViewCompletion    // v3: passed through to the button handler
@@ -572,12 +581,18 @@ private fun XpProgressSection(xpProgress: XpProgress) {
  *     a motivational popup telling the user that skipping is forbidden.
  *     onSwapMission is kept as a parameter for potential future use (e.g., swap-after-penalty).
  *
+ * v6: Added onMissionDone and onMissionAbandoned for the IN_PROGRESS → return flow.
+ *     Added MissionStatus.IN_PROGRESS branch in the when() block.
+ *     Moved showReflectionSlider from ACTIVE branch to IN_PROGRESS branch where it belongs.
+ *
  * @param mission                  The mission data to display.
- * @param showReflectionSlider     True when the discomfort slider should be shown.
+ * @param showReflectionSlider     True when the discomfort slider should be shown (after "I DID IT").
  * @param currentDiscomfortRating  The live slider value (1–10).
  * @param onCardClicked            Called when the user taps the card body (future navigation).
  * @param onAcceptMission          Called when the user taps "ACCEPT THE MISSION".
  * @param onSwapMission            Kept for future use. NOT called by the SWAP MISSION button in v5.
+ * @param onMissionDone            v6: Called when the user taps "I DID IT" (shows discomfort slider).
+ * @param onMissionAbandoned       v6: Called when the user taps "I COULDN'T DO IT" (resets to ACTIVE).
  * @param onDiscomfortRatingChanged Called as the slider moves.
  * @param onSubmitReflection       Called when the user taps "SUBMIT RATING".
  * @param onViewCompletion         v3: Called when the user taps "VIEW COMPLETION".
@@ -590,6 +605,8 @@ private fun MissionCard(
     onCardClicked: () -> Unit,
     onAcceptMission: () -> Unit,
     onSwapMission: () -> Unit,
+    onMissionDone: () -> Unit,               // v6: "I DID IT" — shows discomfort slider
+    onMissionAbandoned: () -> Unit,          // v6: "I COULDN'T DO IT" — resets to ACTIVE
     onDiscomfortRatingChanged: (Int) -> Unit,
     onSubmitReflection: () -> Unit,
     onViewCompletion: () -> Unit              // v3: new parameter
@@ -755,12 +772,71 @@ private fun MissionCard(
                         }
                     }
 
-                    // ── DISCOMFORT SLIDER ─────────────────────────────────────
-                    // Shown after the user taps ACCEPT THE MISSION.
-                    // Hidden by default (showReflectionSlider starts false).
-                    if (showReflectionSlider) {
-                        Spacer(modifier = Modifier.height(18.dp))
+                }
 
+                // ── IN_PROGRESS: user accepted and went to do the mission ────────
+                // v6: This branch was missing — the app showed "IN_PROGRESS" badge
+                // but no buttons, leaving the user stuck. Now shows two buttons:
+                //
+                //   "I DID IT"           → gold primary button → onMissionDone()
+                //     ViewModel sets showReflectionSlider = true, slider appears below.
+                //
+                //   "I COULDN'T DO IT"   → grey secondary button → onMissionAbandoned()
+                //     ViewModel resets status to ACTIVE, user can try again today.
+                //
+                // If showReflectionSlider is already true (user tapped "I DID IT"),
+                // the two buttons are replaced by the discomfort slider so the user
+                // can rate how hard the mission was before submitting.
+                MissionStatus.IN_PROGRESS -> {
+                    if (!showReflectionSlider) {
+                        // ── "I DID IT" — primary gold button ─────────────────────
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(ColorAccentGold)
+                                .clickable(onClick = onMissionDone)
+                                .padding(vertical = 14.dp)
+                        ) {
+                            Text(
+                                text = "I DID IT",
+                                color = Color(0xFF0D0D0D),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.5.sp
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // ── "I COULDN'T DO IT" — grey secondary button ───────────
+                        // Tapping this resets the mission to ACTIVE so the user can
+                        // try again today. No XP is awarded. Not punitive — just
+                        // gives the user another chance if the moment wasn't right.
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(ColorSurfaceVariant)
+                                .clickable(onClick = onMissionAbandoned)
+                                .padding(vertical = 14.dp)
+                        ) {
+                            Text(
+                                text = "I COULDN'T DO IT",
+                                color = ColorTextSecondary,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                letterSpacing = 1.5.sp
+                            )
+                        }
+                    } else {
+                        // ── DISCOMFORT SLIDER — shown after "I DID IT" is tapped ──
+                        // The user tapped "I DID IT" (ViewModel set showReflectionSlider = true).
+                        // Now they rate how uncomfortable the mission felt on a 1–10 scale.
+                        // Tapping SUBMIT RATING calls onSubmitReflection() which awards XP,
+                        // saves the history entry, and transitions to COMPLETED status.
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()

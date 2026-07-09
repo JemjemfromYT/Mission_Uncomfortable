@@ -313,16 +313,6 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * dateToEpochDay — converts a "yyyy-MM-dd" string to an epoch day number.
      *
-     * Epoch day = number of days since 1970-01-01 (UTC midnight).
-     * Used for date arithmetic instead of java.time.LocalDate.toEpochDay(),
-     * which requires API 26. Two dates are consecutive if their epoch days differ by 1.
-     *
-     * @param dateStr  Date string in "yyyy-MM-dd" format (matches sdf pattern).
-     * @return The epoch day as a Long. Returns 0L if dateStr cannot be parsed.
-     */
-    /**
-     * dateToEpochDay — converts a "yyyy-MM-dd" string to an epoch day number.
-     *
      * Uses a UTC-midnight Calendar instead of `parsedDate.time / 86_400_000`.
      * The simple division is wrong around DST transitions where a calendar day
      * spans only 23 or 25 hours — the division would yield a non-integer or
