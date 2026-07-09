@@ -51,12 +51,14 @@
  *
  * ─── HOW TO USE ──────────────────────────────────────────────────────────────
  *
- *   In MainActivity (or a NavHost), show this composable after the user has
- *   completed the WelcomeScreen onboarding:
+ *   In NavGraph.kt (Phase 8+), call this composable from the "dashboard" route:
  *
- *       if (showDashboard) {
- *           DashboardScreen()
- *       }
+ *       DashboardScreen(
+ *           onNavigateToRankUp = { navController.navigate(Routes.RANKUP) }
+ *       )
+ *
+ *   onNavigateToRankUp is called automatically by a LaunchedEffect when the
+ *   ViewModel fires a rank-up event (uiState.rankUpEvent != null).
  *
  * ─── FUTURE WORK ──────────────────────────────────────────────────────────────
  *
@@ -114,6 +116,12 @@
  *          4. The onSwapMission parameter is kept in all composable signatures for
  *             future use (e.g., if you later want to allow swaps after a penalty,
  *             or after watching an ad), but it is NOT called from the button.
+ *
+ *   v10 — Phase 8 (Navigation): added onNavigateToRankUp parameter and LaunchedEffect.
+ *          When the ViewModel fires a rank-up event (uiState.rankUpEvent != null),
+ *          the LaunchedEffect calls onNavigateToRankUp() so NavGraph can navigate to
+ *          the RankUpScreen route. This decouples DashboardScreen from NavController —
+ *          the Screen just notifies its caller, and the caller decides how to navigate.
  */
 
 package com.example.missionuncomfortable.ui.dashboard
@@ -176,19 +184,42 @@ private val ColorDivider = Color(0xFF2E2E2E)           // Very subtle divider li
  *   - When isDailyComplete is true (after VIEW COMPLETION): shows DailyCompleteScreen.
  *     DailyCompleteScreen still receives xpProgress so it can show the updated XP bar.
  *
- * @param viewModel        The ViewModel that manages this screen's state.
- *                         Provided automatically by `viewModel()` — you don't pass one manually.
- * @param onMissionClicked Called when the user taps the mission card area (not the action buttons).
- *                         Use this to navigate to the Mission Detail screen in the future.
+ * v10 (Phase 8): Added onNavigateToRankUp parameter and LaunchedEffect.
+ *   - When uiState.rankUpEvent is non-null, the LaunchedEffect fires onNavigateToRankUp().
+ *   - The caller (NavGraph.kt) passes { navController.navigate(Routes.RANKUP) }.
+ *   - DashboardScreen itself has NO NavController dependency — it only calls the callback.
+ *     This keeps the composable decoupled from navigation infrastructure.
+ *
+ * @param viewModel           The ViewModel that manages this screen's state.
+ *                            Provided automatically by `viewModel()` — you don't pass one manually.
+ * @param onMissionClicked    Called when the user taps the mission card area (not the action buttons).
+ *                            Use this to navigate to the Mission Detail screen in the future.
+ * @param onNavigateToRankUp  v10: Called when uiState.rankUpEvent becomes non-null.
+ *                            The caller is responsible for navigating to RankUpScreen.
+ *                            Defaults to a no-op so Previews and tests don't crash.
  */
 @Composable
 fun DashboardScreen(
     viewModel: DashboardViewModel = viewModel(),   // Auto-creates or retrieves existing ViewModel
-    onMissionClicked: () -> Unit = {}             // Default to no-op so Previews don't crash
+    onMissionClicked: () -> Unit = {},             // Default to no-op so Previews don't crash
+    onNavigateToRankUp: () -> Unit = {}            // v10: called when a rank-up event is detected
 ) {
     // Observe the ViewModel's LiveData as a Compose State.
     // The `?: DashboardUiState()` provides a safe default while the first value arrives.
     val uiState by viewModel.uiState.observeAsState(DashboardUiState())
+
+    // ── v10: RANK-UP NAVIGATION ────────────────────────────────────────────────
+    // When the ViewModel fires a rank-up event (rankUpEvent != null),
+    // call onNavigateToRankUp() to trigger NavController navigation to RankUpScreen.
+    // LaunchedEffect key = uiState.rankUpEvent so this only fires when rankUpEvent
+    // changes value — not on every recomposition. A null→non-null transition is what
+    // triggers the navigation; a non-null→null transition (after celebration completes)
+    // does nothing (the if-guard below prevents a spurious second navigation).
+    LaunchedEffect(uiState.rankUpEvent) {
+        if (uiState.rankUpEvent != null) {
+            onNavigateToRankUp()
+        }
+    }
 
     // ── v7: ADMIN PANEL STATE ─────────────────────────────────────────────────
     // Controls whether the secret admin overlay is visible.

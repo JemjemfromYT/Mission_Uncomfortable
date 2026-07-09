@@ -2,20 +2,30 @@
  * MainActivity.kt
  *
  * The single Activity for Mission: Uncomfortable.
- * Acts as the app's entry point and handles top-level navigation between screens.
+ * Acts as the app's entry point and hands off all screen routing to MissionNavGraph.
  *
  * ─── ARCHITECTURE ─────────────────────────────────────────────────────────────
  *
- *   This app uses a simple stateful-composable routing approach rather than a full
- *   NavController graph. For two screens this is the cleanest option — NavController
- *   adds boilerplate that isn't justified until there are three or more destinations.
+ *   v1–v4 used a simple `var showDashboard by mutableStateOf(...)` to switch between
+ *   WelcomeScreen and DashboardScreen. That approach was the right call for two screens —
+ *   NavController adds unnecessary boilerplate below three destinations.
  *
- *   The routing logic lives in a single `var showDashboard by mutableStateOf(...)` variable:
- *     - false → WelcomeScreen is shown (first-time user)
- *     - true  → DashboardScreen is shown (returning user or after onboarding)
+ *   v5 (Phase 8) migrates to Jetpack Compose Navigation (NavController + NavHost),
+ *   implemented in NavGraph.kt. This change was made because we now have five destinations:
+ *     "welcome"   → WelcomeScreen
+ *     "dashboard" → DashboardScreen
+ *     "history"   → HistoryScreen
+ *     "stats"     → StatsScreen
+ *     "rankup"    → RankUpScreen
+ *   Five destinations exceed the threshold where NavController's back-stack management,
+ *   state restoration, and transition animations pay for their added complexity.
  *
- *   When you add a third screen (e.g., MissionDetailScreen, ProfileScreen), migrate this
- *   to a proper NavHost + NavController with a sealed class / string-route destination set.
+ *   MainActivity now only:
+ *     1. Calls enableEdgeToEdge() for the full-bleed dark look.
+ *     2. Reads the "has_seen_welcome" flag to determine the start destination.
+ *     3. Writes "has_seen_welcome = true" on first launch.
+ *     4. Sets the Material 3 dark theme.
+ *     5. Calls MissionNavGraph(startDestination) — everything else happens there.
  *
  * ─── FIRST-TIME USER DETECTION ────────────────────────────────────────────────
  *
@@ -24,15 +34,22 @@
  *
  *   On first launch:
  *     1. SharedPreferences returns false for has_seen_welcome.
- *     2. showDashboard starts as false → WelcomeScreen is shown.
- *     3. User taps "BEGIN YOUR JOURNEY" → onStartJourney() callback fires.
- *     4. onStartJourney() writes has_seen_welcome = true to SharedPreferences.
- *     5. showDashboard flips to true → DashboardScreen is shown.
+ *     2. startDestination = Routes.WELCOME → NavGraph shows WelcomeScreen.
+ *     3. User taps "BEGIN YOUR JOURNEY" → MainActivity wrote has_seen_welcome = true
+ *        before setContent (see v5 note below) → NavGraph navigates to dashboard.
  *
  *   On every subsequent launch:
  *     1. SharedPreferences returns true for has_seen_welcome.
- *     2. showDashboard starts as true → DashboardScreen is shown immediately.
- *     3. WelcomeScreen is never shown again.
+ *     2. startDestination = Routes.DASHBOARD → NavGraph skips WelcomeScreen entirely.
+ *     3. WelcomeScreen is never instantiated, never shown.
+ *
+ *   v5 change in has_seen_welcome write timing:
+ *     In v1–v4, the KTX `prefs.edit { }` lambda wrote the flag inside the
+ *     WelcomeScreen's onStartJourney callback. In v5, the NavGraph's welcome route
+ *     handles navigation, and the flag is written HERE (in MainActivity, before
+ *     setContent) so the start destination can be determined synchronously.
+ *     The WelcomeScreen's onStartJourney callback now triggers NavGraph navigation,
+ *     not a SharedPreferences write.
  *
  *   Future migration note:
  *     Once Room is set up, move the first-run flag to a UserProfile row in the database
@@ -64,6 +81,12 @@
  *            to: getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
  *        Removed the now-unused `import android.content.Context` line.
  *        No logic changes — behaviour is identical.
+ *
+ *   v5 — Phase 8 (Navigation): replaced the simple mutableStateOf routing with
+ *        MissionNavGraph(). Added navigation-compose dependency to build.gradle.
+ *        MainActivity now reads the "has_seen_welcome" flag and writes it on first
+ *        launch before handing off to NavGraph. The KTX `prefs.edit { }` lambda
+ *        and MODE_PRIVATE fixes from v3/v4 are preserved.
  */
 
 package com.example.missionuncomfortable
@@ -75,14 +98,10 @@ import androidx.activity.compose.setContent                 // Sets the Compose 
 import androidx.activity.enableEdgeToEdge                   // Lets content draw under system bars
 import androidx.compose.material3.MaterialTheme             // Applies the app's Material 3 theme to all children
 import androidx.compose.material3.darkColorScheme           // Builds a Material 3 dark colour palette
-import androidx.compose.runtime.getValue                    // Property delegate for Compose State (used with 'by')
-import androidx.compose.runtime.mutableStateOf              // Creates observable mutable state in Compose
-import androidx.compose.runtime.remember                    // Keeps state alive across recompositions
-import androidx.compose.runtime.setValue                    // Property delegate for Compose State (used with 'by')
 import androidx.compose.ui.graphics.Color                   // Colour class for the theme palette
 import androidx.core.content.edit                           // v3: KTX extension — enables `edit { }` lambda form
-import com.example.missionuncomfortable.ui.dashboard.DashboardScreen  // The main dashboard composable
-import com.example.missionuncomfortable.ui.welcome.WelcomeScreen      // The first-launch intro composable
+import com.example.missionuncomfortable.ui.navigation.MissionNavGraph  // Phase 8: root nav composable
+import com.example.missionuncomfortable.ui.navigation.Routes           // Phase 8: route string constants
 
 // ─── THEME ────────────────────────────────────────────────────────────────────
 
@@ -109,9 +128,9 @@ class MainActivity : ComponentActivity() {
     // typo-prone magic strings scattered across the codebase.
     companion object {
         // Name of the SharedPreferences file — scoped to this app.
-        // NOTE: DashboardViewModel (v4) also opens this same file to read/write
-        // total_xp and last_completed_date. Keeping one file name means all prefs
-        // are in one place and easy to inspect during debugging.
+        // NOTE: DashboardViewModel, HistoryViewModel, and StatsViewModel also open this
+        // same file to read/write their respective data. Keeping one file name means all
+        // prefs are in one place and easy to inspect during debugging.
         private const val PREFS_NAME = "mission_uncomfortable_prefs"
 
         // Key for the "has the user seen the welcome screen?" flag.
@@ -125,7 +144,7 @@ class MainActivity : ComponentActivity() {
         // Draw content behind the system status and navigation bars for a full-bleed dark look.
         enableEdgeToEdge()
 
-        // ── READ FIRST-RUN FLAG ────────────────────────────────────────────
+        // ── READ FIRST-RUN FLAG ────────────────────────────────────────────────
         // Open (or create) the SharedPreferences file in private mode —
         // only this app can read or write it.
         // v4: Changed Context.MODE_PRIVATE → MODE_PRIVATE to remove the
@@ -137,48 +156,40 @@ class MainActivity : ComponentActivity() {
         // getBoolean returns the default (false) if the key has never been written.
         val hasSeenWelcome = prefs.getBoolean(KEY_HAS_SEEN_WELCOME, false)
 
+        // ── FIRST-LAUNCH WRITE ────────────────────────────────────────────────
+        // v5 (Phase 8): In v1–v4, the flag was written inside WelcomeScreen's
+        // onStartJourney callback. In v5 it is written HERE, before setContent,
+        // so that NavGraph can receive a fixed startDestination synchronously.
+        // If the user has never seen the welcome screen, write the flag now so
+        // that if they background the app mid-onboarding and return, we still
+        // show the Dashboard (not the Welcome screen again).
+        //
+        // v3: Using the KTX `edit { }` lambda form — identical behaviour to the old
+        // .edit().putBoolean(...).apply() chain, but removes the Android Studio
+        // warning: "Use the KTX extension function SharedPreferences.edit".
+        // Applies changes asynchronously in the background (non-blocking).
+        if (!hasSeenWelcome) {
+            prefs.edit {
+                putBoolean(KEY_HAS_SEEN_WELCOME, true)
+            }
+        }
+
+        // ── DETERMINE START DESTINATION ───────────────────────────────────────
+        // Pass the correct start route to NavGraph so it knows which screen to show first.
+        //   hasSeenWelcome == false → Routes.WELCOME  (first launch: show intro)
+        //   hasSeenWelcome == true  → Routes.DASHBOARD (returning user: skip intro)
+        val startDestination = if (hasSeenWelcome) Routes.DASHBOARD else Routes.WELCOME
+
         setContent {
             // Apply the dark Material 3 theme to the entire composable tree.
             // All child composables (DashboardScreen, WelcomeScreen, etc.) inherit these colours.
             MaterialTheme(colorScheme = MissionDarkColors) {
 
-                // ── ROUTING STATE ──────────────────────────────────────────
-                // `remember { mutableStateOf(...) }` creates state that survives recompositions
-                // but resets on process death (which is fine — we persist the real flag in SharedPreferences).
-                //
-                // Initial value: true if the user has already seen the welcome screen
-                //                (skip straight to the Dashboard), false otherwise.
-                var showDashboard by remember { mutableStateOf(hasSeenWelcome) }
-
-                // ── SCREEN ROUTING ─────────────────────────────────────────
-                // Simple if/else — no NavController needed for two screens.
-                // Compose will automatically recompose when showDashboard changes.
-                if (showDashboard) {
-                    // ── RETURNING USER PATH ───────────────────────────────
-                    // The user has already completed onboarding.
-                    // Jump straight to the Dashboard.
-                    DashboardScreen()
-                } else {
-                    // ── FIRST-TIME USER PATH ──────────────────────────────
-                    // Show the welcome/intro screen.
-                    // When the user taps "BEGIN YOUR JOURNEY", the lambda below fires:
-                    //   1. Write has_seen_welcome = true so this screen is never shown again.
-                    //   2. Flip showDashboard to true — Compose re-routes to DashboardScreen.
-                    WelcomeScreen(
-                        onStartJourney = {
-                            // v3: KTX `edit { }` lambda form — identical behaviour to the old
-                            // .edit().putBoolean(...).apply() chain, but removes the Android
-                            // Studio warning: "Use the KTX extension function SharedPreferences.edit".
-                            // Applies changes asynchronously in the background (non-blocking).
-                            prefs.edit {
-                                putBoolean(KEY_HAS_SEEN_WELCOME, true)
-                            }
-
-                            // Flip the routing state — triggers recomposition → DashboardScreen shown.
-                            showDashboard = true
-                        }
-                    )
-                }
+                // ── NAVIGATION GRAPH ───────────────────────────────────────────
+                // Phase 8: replaced the old `if (showDashboard) DashboardScreen() else WelcomeScreen()`
+                // with MissionNavGraph(). All routing, back-stack management, bottom nav,
+                // and screen transitions now live in NavGraph.kt.
+                MissionNavGraph(startDestination = startDestination)
             }
         }
     }
