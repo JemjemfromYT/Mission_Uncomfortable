@@ -15,8 +15,9 @@
  *                                    3. MissionCard        — Today's active/completed mission card
  *
  *   RankBadgeSection()           — Composable for the visual rank badge at the top of the screen.
- *                                  v4: Now reads rank.badgeResId to display rank-specific badge art.
- *                                  Each of the 5 ranks has its own unique drawable.
+ *                                  v4:  Now reads rank.badgeResId to display rank-specific badge art.
+ *                                  v11: Badge enlarged (140dp image / 170dp glow container).
+ *                                       Per-rank glow added — each rank has a unique intensity.
  *
  *   XpProgressSection()          — Composable for the XP progress bar and labels.
  *                                  v3: The bar animates automatically when xpProgress changes
@@ -122,37 +123,58 @@
  *          the LaunchedEffect calls onNavigateToRankUp() so NavGraph can navigate to
  *          the RankUpScreen route. This decouples DashboardScreen from NavController —
  *          the Screen just notifies its caller, and the caller decides how to navigate.
+ *
+ *   v11 — RANK BADGE VISUAL UPGRADE:
+ *          1. RankBadgeSection: badge image enlarged from 120dp to 140dp.
+ *             A 170dp container Box now wraps the badge, giving 15dp of glow halo space
+ *             on each side without clipping the badge art.
+ *          2. Added rank-specific glow animation drawn behind the badge via
+ *             Brush.radialGradient + drawBehind. No external library required.
+ *             Observer  (1): no glow — nothing earned yet.
+ *             Initiate  (2): faint static halo — barely visible, first sign of progress.
+ *             Challenger(3): slow breathing pulse (2200ms half-cycle).
+ *             Conqueror (4): strong pulsing glow (1600ms half-cycle).
+ *             Sovereign (5): rapid full shimmer (1100ms half-cycle).
+ *          3. New imports: FastOutSlowInEasing, RepeatMode, animateFloat,
+ *             infiniteRepeatable, rememberInfiniteTransition, drawBehind, Brush.
  */
 
 package com.example.missionuncomfortable.ui.dashboard
 
 // ─── IMPORTS ──────────────────────────────────────────────────────────────────
 // Jetpack Compose UI building blocks
-import androidx.compose.animation.core.animateFloatAsState        // Smoothly animates a float value
-import androidx.compose.animation.core.tween                       // Animation timing spec
-import androidx.compose.foundation.Image                           // Image composable for rank badge
-import androidx.compose.foundation.background                      // Sets the background colour of a composable
-import androidx.compose.foundation.clickable                       // Makes a composable respond to taps
-import androidx.compose.foundation.layout.*                        // Box, Column, Row, Spacer, padding, fillMaxSize, etc.
-import androidx.compose.foundation.rememberScrollState             // Remembers scroll position of a scrollable column
-import androidx.compose.foundation.shape.CircleShape               // Circular shape for difficulty dots
-import androidx.compose.foundation.shape.RoundedCornerShape        // Rounded corners for cards and progress bar
-import androidx.compose.foundation.verticalScroll                  // Makes a Column scrollable vertically
-import androidx.compose.material3.*                                // Material 3 components: Text, Slider, AlertDialog, CircularProgressIndicator, etc.
-import androidx.compose.runtime.*                                  // remember, LaunchedEffect, getValue, mutableStateOf, etc.
-import androidx.compose.ui.Alignment                               // Alignment constants (center, start, end, etc.)
-import androidx.compose.ui.Modifier                                // Modifier — the "how does it look and behave" chain
-import androidx.compose.ui.draw.clip                               // Clips a composable to a specific shape
-import androidx.compose.ui.graphics.Color                          // Colour class — use hex values like Color(0xFF...)
-import androidx.compose.ui.layout.ContentScale                     // Controls how Image content is scaled inside bounds
-import androidx.compose.ui.res.painterResource                     // Loads a drawable resource for use in Image()
-import androidx.compose.ui.text.font.FontWeight                    // Bold, normal, etc.
-import androidx.compose.ui.text.style.TextAlign                    // Centre, start, end alignment for text
-import androidx.compose.ui.unit.dp                                 // Density-independent pixels for spacing/sizing
-import androidx.compose.ui.unit.sp                                 // Scale-independent pixels for font sizes
-import androidx.compose.runtime.livedata.observeAsState            // Bridges LiveData → Compose State
-import androidx.lifecycle.viewmodel.compose.viewModel              // Gets or creates a ViewModel scoped to this composable
-import kotlin.math.roundToInt                                      // Accurate Float-to-Int rounding for the discomfort slider
+import androidx.compose.animation.core.FastOutSlowInEasing          // Easing curve for the glow pulse animation
+import androidx.compose.animation.core.RepeatMode                   // Reverse mode — glow pulse goes back and forth
+import androidx.compose.animation.core.animateFloat                 // Float animation on an InfiniteTransition
+import androidx.compose.animation.core.animateFloatAsState          // Smoothly animates a float value
+import androidx.compose.animation.core.infiniteRepeatable           // Loops the glow animation forever
+import androidx.compose.animation.core.rememberInfiniteTransition   // Creates the infinite animation driver for the glow
+import androidx.compose.animation.core.tween                        // Animation timing spec
+import androidx.compose.foundation.Image                            // Image composable for rank badge
+import androidx.compose.foundation.background                       // Sets the background colour of a composable
+import androidx.compose.foundation.clickable                        // Makes a composable respond to taps
+import androidx.compose.foundation.layout.*                         // Box, Column, Row, Spacer, padding, fillMaxSize, etc.
+import androidx.compose.foundation.rememberScrollState              // Remembers scroll position of a scrollable column
+import androidx.compose.foundation.shape.CircleShape                // Circular shape for difficulty dots
+import androidx.compose.foundation.shape.RoundedCornerShape         // Rounded corners for cards and progress bar
+import androidx.compose.foundation.verticalScroll                   // Makes a Column scrollable vertically
+import androidx.compose.material3.*                                 // Material 3 components: Text, Slider, AlertDialog, CircularProgressIndicator, etc.
+import androidx.compose.runtime.*                                   // remember, LaunchedEffect, getValue, mutableStateOf, etc.
+import androidx.compose.ui.Alignment                                // Alignment constants (center, start, end, etc.)
+import androidx.compose.ui.Modifier                                 // Modifier — the "how does it look and behave" chain
+import androidx.compose.ui.draw.clip                                // Clips a composable to a specific shape
+import androidx.compose.ui.draw.drawBehind                          // Draws the radial glow circle behind the badge container
+import androidx.compose.ui.graphics.Brush                           // Brush.radialGradient — used to shape the glow
+import androidx.compose.ui.graphics.Color                           // Colour class — use hex values like Color(0xFF...)
+import androidx.compose.ui.layout.ContentScale                      // Controls how Image content is scaled inside bounds
+import androidx.compose.ui.res.painterResource                      // Loads a drawable resource for use in Image()
+import androidx.compose.ui.text.font.FontWeight                     // Bold, normal, etc.
+import androidx.compose.ui.text.style.TextAlign                     // Centre, start, end alignment for text
+import androidx.compose.ui.unit.dp                                  // Density-independent pixels for spacing/sizing
+import androidx.compose.ui.unit.sp                                  // Scale-independent pixels for font sizes
+import androidx.compose.runtime.livedata.observeAsState             // Bridges LiveData → Compose State
+import androidx.lifecycle.viewmodel.compose.viewModel               // Gets or creates a ViewModel scoped to this composable
+import kotlin.math.roundToInt                                       // Accurate Float-to-Int rounding for the discomfort slider
 // Admin panel — secret testing overlay (v7: new).
 // Activation: tap the rank badge 7 times rapidly on the Dashboard.
 import com.example.missionuncomfortable.ui.admin.AdminPanel
@@ -370,8 +392,9 @@ private fun DashboardContent(
 
         // ── SECTION 1: Rank Badge ─────────────────────────────────────────────
         // Displays a large badge image + the rank name below it.
-        // v7: onAdminTriggered is passed through so RankBadgeSection can fire it
-        //     after detecting the secret 7-tap gesture on the badge image.
+        // v7:  onAdminTriggered is passed through so RankBadgeSection can fire it
+        //      after detecting the secret 7-tap gesture on the badge image.
+        // v11: Badge is now 140dp with a 170dp glow container and per-rank glow animation.
         RankBadgeSection(rank = xpProgress.currentRank, onSecretTap = onAdminTriggered)
 
         Spacer(modifier = Modifier.height(28.dp))  // Vertical gap between badge and XP bar
@@ -409,22 +432,33 @@ private fun DashboardContent(
 /**
  * RankBadgeSection — displays the user's current rank badge and title.
  *
- * v4: Now uses rank.badgeResId to display rank-specific badge art.
- * Each of the 5 ranks (Observer → Sovereign) has its own unique vector drawable.
- * The ?: fallback to rank_badge_placeholder is retained as a safety net in case
- * a rank is added to ALL_RANKS without a badge being created yet.
+ * v4:  Now uses rank.badgeResId to display rank-specific badge art.
+ *      Each of the 5 ranks (Observer → Sovereign) has its own unique vector drawable.
+ *      The null-safe branch is retained as a safety net in case a rank is added to
+ *      ALL_RANKS without a badge being created yet.
  *
- * v7: Added onSecretTap parameter and 7-tap secret detection.
- *     Tapping the badge 7 times within 3 seconds fires onSecretTap(),
- *     which DashboardScreen uses to show the AdminPanel overlay.
+ * v7:  Added onSecretTap parameter and 7-tap secret detection.
+ *      Tapping the badge area 7 times within 3 seconds fires onSecretTap(),
+ *      which DashboardScreen uses to show the AdminPanel overlay.
+ *
+ * v11: Badge image enlarged from 120dp to 140dp.
+ *      A 170dp container Box now wraps the badge so the radial glow can extend
+ *      15dp beyond the badge circle on each side without clipping.
+ *      Per-rank glow animation added via Brush.radialGradient drawn with drawBehind:
+ *        Observer  (1): no glow — nothing has been earned yet.
+ *        Initiate  (2): faint static halo — the first signal of something earned.
+ *        Challenger(3): slow breathing pulse (2200ms half-cycle).
+ *        Conqueror (4): strong pulsing glow (1600ms half-cycle).
+ *        Sovereign (5): rapid full shimmer (1100ms half-cycle) — the apex.
  *
  * @param rank         The user's current Rank object (level, title, description, badgeResId).
  * @param onSecretTap  v7: Called when the secret 7-tap gesture completes. Used to show AdminPanel.
  */
 @Composable
 private fun RankBadgeSection(rank: Rank, onSecretTap: () -> Unit) {
+
     // ── v7: SECRET TAP DETECTION STATE ───────────────────────────────────────
-    // Tracks how many times the badge has been tapped and when the first tap happened.
+    // Tracks how many times the badge area has been tapped and when the first tap happened.
     // If 7 taps occur within 3 seconds of the first tap, onSecretTap() is fired.
     // If more than 3 seconds pass between the first and a subsequent tap, the count resets.
     //
@@ -432,8 +466,49 @@ private fun RankBadgeSection(rank: Rank, onSecretTap: () -> Unit) {
     //   - 7 taps is too many to happen accidentally during normal use.
     //   - 3 seconds is short enough that only deliberate rapid tapping triggers it.
     //   - The gesture is memorable but completely invisible — no visual indicator.
-    var tapCount      by remember { mutableStateOf(0) }
-    var firstTapTime  by remember { mutableStateOf(0L) }
+    var tapCount     by remember { mutableStateOf(0) }
+    var firstTapTime by remember { mutableStateOf(0L) }
+
+    // ── v11: RANK-SPECIFIC GLOW ANIMATION ─────────────────────────────────────
+    // Glow colour matches the gold accent used throughout this file.
+    // The glow is drawn behind the badge via Brush.radialGradient + drawBehind.
+    // No external library is required — this is pure Compose Canvas.
+    val glowColor = ColorAccentGold
+
+    // Per-rank animation parameters — Triple(minAlpha, maxAlpha, halfCycleDurationMs).
+    //   Levels 1-2: minAlpha == maxAlpha → glow is static, no visible pulse.
+    //   Levels 3-5: minAlpha < maxAlpha  → alpha oscillates, badge breathes.
+    //
+    // Why these values?
+    //   - Observer starts at zero: you have earned nothing yet, the badge is cold.
+    //   - Each rank adds more light: the badge visually reflects accumulated effort.
+    //   - Speed also increases: Sovereign's shimmer is noticeably faster than Challenger's pulse.
+    val (glowAlphaMin, glowAlphaMax, glowDurationMs) = when (rank.level) {
+        1    -> Triple(0.00f, 0.00f, 3000)   // Observer:    no glow at all
+        2    -> Triple(0.08f, 0.08f, 3000)   // Initiate:    faint static halo, barely visible
+        3    -> Triple(0.10f, 0.28f, 2200)   // Challenger:  slow breathing pulse
+        4    -> Triple(0.20f, 0.48f, 1600)   // Conqueror:   strong pulsing glow
+        else -> Triple(0.32f, 0.68f, 1100)   // Sovereign:   rapid shimmer, visibly alive
+    }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "BadgeGlow")
+
+    val animatedGlowAlpha by infiniteTransition.animateFloat(
+        initialValue  = glowAlphaMin,
+        targetValue   = glowAlphaMax,
+        animationSpec = infiniteRepeatable(
+            // FastOutSlowInEasing gives the pulse a natural deceleration at each peak —
+            // more organic than a linear oscillation.
+            animation  = tween(durationMillis = glowDurationMs, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse   // Animate forward then backward — a smooth breath
+        ),
+        label = "BadgeGlowAlpha"
+    )
+
+    // Levels 1-2 use the fixed static minimum (min == max, so the animation
+    // produces a constant value — no CPU wasted on invisible updates).
+    // Levels 3-5 use the live animated value so the pulse runs continuously.
+    val effectiveGlowAlpha = if (rank.level >= 3) animatedGlowAlpha else glowAlphaMin
 
     // Centre everything in this section horizontally
     Column(
@@ -441,7 +516,13 @@ private fun RankBadgeSection(rank: Rank, onSecretTap: () -> Unit) {
         modifier = Modifier.fillMaxWidth()     // Take the full width so centring works correctly
     ) {
 
-        // ── RANK BADGE IMAGE ───────────────────────────────────────────────
+        // ── GLOW CONTAINER + BADGE IMAGE + SECRET TAP ZONE ────────────────────
+        // The 170dp outer Box serves three purposes:
+        //   1. drawBehind: draws the radial glow in this larger space so it extends
+        //      15dp beyond the 140dp badge circle on each side without being clipped.
+        //   2. clickable: captures the 7-tap secret gesture across the full badge area.
+        //   3. Alignment.Center: keeps the 140dp badge image perfectly centred inside.
+        //
         // v4: reads rank.badgeResId — each rank has its own distinct drawable.
         //   Level 1 Observer   → badge_observer   (open eye)
         //   Level 2 Initiate   → badge_initiate   (single chevron)
@@ -450,72 +531,89 @@ private fun RankBadgeSection(rank: Rank, onSecretTap: () -> Unit) {
         //   Level 5 Sovereign  → badge_sovereign   (military crown)
         //
         // v6 FIX: replaced checkNotNull() with a null-safe branch (no crash on null badgeResId).
-        // v7: Wrapped in a clickable for secret tap detection (tap × 7 within 3 seconds).
-        //
-        // The secret tap logic:
-        //   1. On first tap: record current timestamp as firstTapTime, set tapCount = 1.
-        //   2. On subsequent taps within 3 seconds: increment tapCount.
-        //      If tapCount reaches 7 → call onSecretTap() and reset counter.
-        //   3. If a tap arrives more than 3 seconds after firstTapTime → reset and start over.
-        val badgeSecretModifier = Modifier
-            .size(120.dp)
-            .clip(CircleShape)
-            .clickable {
-                val now = System.currentTimeMillis()
-                if (tapCount == 0 || now - firstTapTime > 3_000L) {
-                    // Either first tap ever, or previous sequence timed out — start fresh.
-                    tapCount     = 1
-                    firstTapTime = now
-                } else {
-                    tapCount++
-                    if (tapCount >= 7) {
-                        // Secret gesture complete! Fire the callback and reset.
-                        tapCount     = 0
-                        firstTapTime = 0L
-                        onSecretTap()
+        // v7: clickable captures secret 7-tap gesture (fires onSecretTap after 7 taps in 3s).
+        // v11: container enlarged to 170dp; badge image enlarged to 140dp; glow added.
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(170.dp)
+                .drawBehind {
+                    // Radial gradient centred on the container. Fades from gold to transparent.
+                    // radius = half the container diameter so the glow fills the full circle.
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                glowColor.copy(alpha = effectiveGlowAlpha),
+                                Color.Transparent
+                            ),
+                            radius = size.minDimension / 2f
+                        )
+                    )
+                }
+                .clickable {
+                    // ── SECRET TAP LOGIC (v7) ─────────────────────────────────
+                    // 7 taps within 3 seconds fires onSecretTap() and opens AdminPanel.
+                    val now = System.currentTimeMillis()
+                    if (tapCount == 0 || now - firstTapTime > 3_000L) {
+                        // First tap or the previous sequence timed out — start fresh.
+                        tapCount     = 1
+                        firstTapTime = now
+                    } else {
+                        tapCount++
+                        if (tapCount >= 7) {
+                            // Sequence complete — fire callback and reset the counter.
+                            tapCount     = 0
+                            firstTapTime = 0L
+                            onSecretTap()
+                        }
                     }
                 }
-            }
-
-        if (rank.badgeResId != null) {
-            // Real badge art — ContentScale.Fit scales the drawable to the 120dp
-            // frame while keeping its aspect ratio. CircleShape masks it to a circle.
-            Image(
-                painter = painterResource(id = rank.badgeResId),
-                contentDescription = "Rank badge for ${rank.title}",
-                contentScale = ContentScale.Fit,
-                modifier = badgeSecretModifier   // v7: clickable for secret tap detection
-            )
-        } else {
-            // Placeholder circle — shown when no badge drawable has been added yet.
-            // Displays the rank's initial letter in gold on a dark circle.
-            // To replace: add badge drawables to res/drawable/ and set badgeResId
-            // in DashboardModels.ALL_RANKS for each rank.
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = badgeSecretModifier   // v7: same clickable applied to placeholder
-                    .background(ColorSurfaceVariant)
-            ) {
-                Text(
-                    // firstOrNull() + ?: "?" guards against a blank rank title string.
-                    text = rank.title.firstOrNull()?.uppercase() ?: "?",
-                    color = ColorAccentGold,
-                    fontSize = 48.sp,
-                    fontWeight = FontWeight.Bold
+        ) {
+            if (rank.badgeResId != null) {
+                // Real badge art — ContentScale.Fit keeps the SVG aspect ratio inside 140dp.
+                // CircleShape masks to a circle, matching the badge drawables' circular design.
+                // The 30dp margin between container (170dp) and image (140dp) is the glow halo zone.
+                Image(
+                    painter            = painterResource(id = rank.badgeResId),
+                    contentDescription = "Rank badge for ${rank.title}",
+                    contentScale       = ContentScale.Fit,
+                    modifier           = Modifier
+                        .size(140.dp)
+                        .clip(CircleShape)
                 )
+            } else {
+                // Placeholder circle — shown when no badge drawable has been added yet.
+                // Displays the rank's initial letter in gold on a dark circle.
+                // To replace: add badge drawables to res/drawable/ and set badgeResId
+                // in DashboardModels.ALL_RANKS for each rank.
+                // firstOrNull() + ?: "?" guards against a blank rank title string.
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier         = Modifier
+                        .size(140.dp)
+                        .clip(CircleShape)
+                        .background(ColorSurfaceVariant)
+                ) {
+                    Text(
+                        text       = rank.title.firstOrNull()?.uppercase() ?: "?",
+                        color      = ColorAccentGold,
+                        fontSize   = 48.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))  // Gap between badge and rank title text
+        Spacer(modifier = Modifier.height(16.dp))  // Gap between badge container and rank title text
 
         // ── RANK LABEL ────────────────────────────────────────────────────
         // "RANK" in small caps above the rank title — acts as a label/category
         Text(
-            text = "RANK",
-            color = ColorTextSecondary,             // Muted grey — this is supporting info
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 3.sp                   // Wide letter spacing for a sleek, "stamp" feel
+            text          = "RANK",
+            color         = ColorTextSecondary,    // Muted grey — this is supporting info
+            fontSize      = 11.sp,
+            fontWeight    = FontWeight.SemiBold,
+            letterSpacing = 3.sp                  // Wide letter spacing for a sleek, "stamp" feel
         )
 
         Spacer(modifier = Modifier.height(4.dp))   // Tiny gap between label and title
@@ -523,9 +621,9 @@ private fun RankBadgeSection(rank: Rank, onSecretTap: () -> Unit) {
         // ── RANK TITLE ────────────────────────────────────────────────────
         // The rank's name, e.g. "The Initiate", in large white text
         Text(
-            text = rank.title,
-            color = ColorTextPrimary,              // Off-white — this is the most important text here
-            fontSize = 24.sp,
+            text       = rank.title,
+            color      = ColorTextPrimary,         // Off-white — this is the most important text here
+            fontSize   = 24.sp,
             fontWeight = FontWeight.Bold
         )
 
@@ -534,11 +632,11 @@ private fun RankBadgeSection(rank: Rank, onSecretTap: () -> Unit) {
         // ── RANK DESCRIPTION ──────────────────────────────────────────────
         // Short flavour text describing the rank — less prominent than the title
         Text(
-            text = rank.description,
-            color = ColorTextSecondary,            // Muted grey — supporting flavour, not critical
-            fontSize = 13.sp,
+            text      = rank.description,
+            color     = ColorTextSecondary,        // Muted grey — supporting flavour, not critical
+            fontSize  = 13.sp,
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 16.dp)  // Extra horizontal padding for narrower text
+            modifier  = Modifier.padding(horizontal = 16.dp)  // Extra horizontal padding for narrower text
         )
     }
 }
