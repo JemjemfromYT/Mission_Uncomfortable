@@ -76,7 +76,10 @@
  *   "dashboard" route (so it can call onRankUpCelebrationComplete() on the right object).
  *   To achieve this, the "rankup" composable retrieves the ViewModel from the
  *   "dashboard" back stack entry via navController.getBackStackEntry(Routes.DASHBOARD).
- *   This is the standard Compose Navigation pattern for shared ViewModels across routes.
+ *   The result is wrapped in remember(backStackEntry) — using the rankup route's own
+ *   NavBackStackEntry as the key. This is required by the Navigation Compose API:
+ *   getBackStackEntry() called during composition must be keyed on a NavBackStackEntry,
+ *   not on navController alone (which triggers a compile/runtime error).
  *
  * ─── BOTTOM NAV BAR ──────────────────────────────────────────────────────────
  *
@@ -97,24 +100,42 @@
  *   dashboard ↔ stats    : horizontal slide (stats slides in from the right)
  *   rankup               : fade in/out (feels like a ceremony, not a page turn)
  *
+ *   WHY slideInHorizontally instead of slideIntoContainer:
+ *     slideIntoContainer / slideOutOfContainer were introduced in Compose Animation 1.5
+ *     (August 2023). Projects on an older Compose BOM get "Unresolved reference" compile
+ *     errors because those functions simply do not exist in earlier versions.
+ *     slideInHorizontally / slideOutHorizontally have been available since Compose 1.0
+ *     and produce an identical visual result — the lambda offset { it } or { -it }
+ *     controls which direction the screen enters/exits.
+ *
  * ─── CHANGELOG ───────────────────────────────────────────────────────────────
  *
  *   v1 — Initial implementation. Phase 8 + Phase 9 navigation wiring.
  *        Bottom nav bar (Mission / History / Stats), welcome-screen first-launch
  *        gate, rank-up route with shared ViewModel, screen slide transitions.
+ *   v2 — Fixed three compile errors reported after first build attempt:
+ *        (1) "Unresolved reference: slideIntoContainer" + slideOutOfContainer.
+ *            Replaced both with slideInHorizontally / slideOutHorizontally (Compose 1.0+).
+ *            Removed AnimatedContentTransitionScope import — no longer needed.
+ *        (2) "Calling getBackStackEntry during composition without using remember
+ *             with a NavBackStackEntry key."
+ *            Changed remember(navController) → remember(backStackEntry) in the rankup
+ *            composable. backStackEntry is the lambda parameter that Compose passes into
+ *            every composable { backStackEntry -> } block, and it IS a NavBackStackEntry,
+ *            which satisfies the Navigation Compose API requirement.
  */
 
 package com.example.missionuncomfortable.ui.navigation
 
 // ─── IMPORTS ──────────────────────────────────────────────────────────────────
-import androidx.compose.animation.AnimatedContentTransitionScope        // slideIntoContainer direction
 import androidx.compose.animation.core.tween                            // Duration spec for transitions
 import androidx.compose.animation.fadeIn                                // Fade-in transition
 import androidx.compose.animation.fadeOut                               // Fade-out transition
-import androidx.compose.animation.slideIntoContainer                    // Slide-in from a direction
-import androidx.compose.animation.slideOutOfContainer                   // Slide-out to a direction
-import androidx.compose.foundation.background                           // Background colour modifier
-import androidx.compose.foundation.layout.Box                           // Layering composable
+import androidx.compose.animation.slideInHorizontally                   // Horizontal slide-in (available since Compose 1.0)
+import androidx.compose.animation.slideOutHorizontally                  // Horizontal slide-out (available since Compose 1.0)
+// NOTE: slideIntoContainer / slideOutOfContainer are NOT imported here — they require
+// Compose Animation 1.5+ and cause "Unresolved reference" errors on older Compose BOMs.
+// slideInHorizontally { ±it } is the equivalent that works on all supported versions.
 import androidx.compose.foundation.layout.fillMaxSize                   // Fill all available space
 import androidx.compose.foundation.layout.padding                       // Inner padding modifier
 import androidx.compose.foundation.layout.size                          // Fixed size modifier
@@ -140,7 +161,6 @@ import androidx.navigation.compose.NavHost                              // Hosts
 import androidx.navigation.compose.composable                           // Registers a route in the NavHost
 import androidx.navigation.compose.currentBackStackEntryAsState         // Observes current destination as State
 import androidx.navigation.compose.rememberNavController                // Creates and remembers a NavController
-import com.example.missionuncomfortable.R                               // App resource references
 import com.example.missionuncomfortable.ui.dashboard.DashboardScreen   // Mission dashboard screen
 import com.example.missionuncomfortable.ui.dashboard.DashboardViewModel // ViewModel for dashboard + rank-up
 import com.example.missionuncomfortable.ui.history.HistoryScreen        // Mission history screen
@@ -366,7 +386,7 @@ fun MissionNavGraph(startDestination: String) {
             // ── ROUTE: WELCOME ─────────────────────────────────────────────────
             // Shown only on first launch. Fades in so the app "opens like a door".
             // When the user taps "BEGIN YOUR JOURNEY":
-            //   1. MainActivity already wrote has_seen_welcome = true before launching NavGraph.
+            //   1. MainActivity already wrote has_seen_welcome = true before setContent.
             //   2. WelcomeScreen calls onStartJourney().
             //   3. We navigate to dashboard and pop the welcome route off the back stack
             //      so the user cannot press Back to return to it.
@@ -389,22 +409,25 @@ fun MissionNavGraph(startDestination: String) {
 
             // ── ROUTE: DASHBOARD ───────────────────────────────────────────────
             // The main screen — shows today's mission, rank badge, and XP bar.
-            // Slides in from the right when navigating back from History or Stats.
+            // Slides in from the left when navigating back from History or Stats.
+            //
+            // Transition direction reasoning:
+            //   Dashboard is the LEFTMOST tab. When returning to it, it slides in from
+            //   the left ( { -it } = initial offset is -fullWidth = off-screen left ).
+            //   When leaving, it exits to the left to make room for the right-hand tabs.
+            //
             // onNavigateToRankUp is called by DashboardScreen's LaunchedEffect when
             // uiState.rankUpEvent is non-null (i.e. a rank-up just occurred).
             composable(
                 route           = Routes.DASHBOARD,
                 enterTransition = {
-                    slideIntoContainer(
-                        towards       = AnimatedContentTransitionScope.SlideDirection.Right,
-                        animationSpec = tween(SLIDE_DURATION_MS)
-                    )
+                    // Slide in from LEFT — Dashboard is the leftmost tab in the bar.
+                    // { -it } → initial X offset = -fullWidth (completely off-screen left).
+                    slideInHorizontally(animationSpec = tween(SLIDE_DURATION_MS)) { -it }
                 },
                 exitTransition  = {
-                    slideOutOfContainer(
-                        towards       = AnimatedContentTransitionScope.SlideDirection.Left,
-                        animationSpec = tween(SLIDE_DURATION_MS)
-                    )
+                    // Slide out to LEFT — moves aside as History/Stats enter from the right.
+                    slideOutHorizontally(animationSpec = tween(SLIDE_DURATION_MS)) { -it }
                 }
             ) {
                 DashboardScreen(
@@ -421,20 +444,21 @@ fun MissionNavGraph(startDestination: String) {
 
             // ── ROUTE: HISTORY ─────────────────────────────────────────────────
             // Scrollable list of all completed missions, most recent first.
-            // Slides in from the left when the user taps the History tab.
+            // Slides in from the RIGHT when the user taps the History tab —
+            // History sits to the right of Dashboard in the tab order.
+            //
+            //   Enter: { it }  → initial X offset = +fullWidth (off-screen right)
+            //   Exit:  { it }  → final   X offset = +fullWidth (exits right)
             composable(
                 route           = Routes.HISTORY,
                 enterTransition = {
-                    slideIntoContainer(
-                        towards       = AnimatedContentTransitionScope.SlideDirection.Left,
-                        animationSpec = tween(SLIDE_DURATION_MS)
-                    )
+                    // Slide in from RIGHT — History is right of Mission in the tab bar.
+                    // { it } → initial X offset = +fullWidth (completely off-screen right).
+                    slideInHorizontally(animationSpec = tween(SLIDE_DURATION_MS)) { it }
                 },
                 exitTransition  = {
-                    slideOutOfContainer(
-                        towards       = AnimatedContentTransitionScope.SlideDirection.Right,
-                        animationSpec = tween(SLIDE_DURATION_MS)
-                    )
+                    // Slide out to RIGHT — moves aside when returning to Dashboard.
+                    slideOutHorizontally(animationSpec = tween(SLIDE_DURATION_MS)) { it }
                 }
             ) {
                 // viewModel() here creates a HistoryViewModel scoped to this back stack entry.
@@ -445,20 +469,19 @@ fun MissionNavGraph(startDestination: String) {
 
             // ── ROUTE: STATS ───────────────────────────────────────────────────
             // Bar charts: mission count by category + average discomfort by day of week.
-            // Slides in from the left when the user taps the Stats tab.
+            // Slides in from the RIGHT — Stats is the rightmost tab in the tab order.
+            //
+            //   Enter: { it }  → initial X offset = +fullWidth (off-screen right)
+            //   Exit:  { it }  → final   X offset = +fullWidth (exits right)
             composable(
                 route           = Routes.STATS,
                 enterTransition = {
-                    slideIntoContainer(
-                        towards       = AnimatedContentTransitionScope.SlideDirection.Left,
-                        animationSpec = tween(SLIDE_DURATION_MS)
-                    )
+                    // Slide in from RIGHT — Stats is the rightmost tab in the bar.
+                    slideInHorizontally(animationSpec = tween(SLIDE_DURATION_MS)) { it }
                 },
                 exitTransition  = {
-                    slideOutOfContainer(
-                        towards       = AnimatedContentTransitionScope.SlideDirection.Right,
-                        animationSpec = tween(SLIDE_DURATION_MS)
-                    )
+                    // Slide out to RIGHT — moves aside when returning to Dashboard.
+                    slideOutHorizontally(animationSpec = tween(SLIDE_DURATION_MS)) { it }
                 }
             ) {
                 // viewModel() here creates a StatsViewModel scoped to this back stack entry.
@@ -476,30 +499,51 @@ fun MissionNavGraph(startDestination: String) {
             //   would get a fresh instance with no rankUpEvent set, and onRankUpCelebrationComplete()
             //   would update the wrong object.
             //
-            //   Fix: retrieve the "dashboard" NavBackStackEntry and get its ViewModel from that.
+            //   Solution: retrieve the "dashboard" NavBackStackEntry and use viewModel(dashboardEntry)
+            //   to get the existing ViewModel from that entry's ViewModelStore.
             //   This is the standard Compose Navigation pattern for sharing ViewModels across routes.
             //   See: https://developer.android.com/jetpack/compose/navigation#viewmodels
+            //
+            // REMEMBER KEY NOTE — WHY backStackEntry, NOT navController:
+            //   Navigation Compose requires that any call to getBackStackEntry() during
+            //   composition be wrapped in remember() with a NavBackStackEntry as the key.
+            //   Using remember(navController) causes this compile/runtime error:
+            //     "Calling getBackStackEntry during composition without using remember
+            //      with a NavBackStackEntry key"
+            //   Fix: use remember(backStackEntry) where backStackEntry is the lambda parameter
+            //   that Compose automatically passes into every composable { backStackEntry -> } block.
+            //   It IS a NavBackStackEntry (specifically, the "rankup" route's entry), so it
+            //   satisfies the API requirement. The remember cache is invalidated if the rankup
+            //   entry itself changes — which is the correct re-computation trigger.
             composable(
                 route           = Routes.RANKUP,
                 enterTransition = { fadeIn(animationSpec = tween(FADE_DURATION_MS)) },
                 exitTransition  = { fadeOut(animationSpec = tween(300)) }
-            ) {
+            ) { backStackEntry ->   // backStackEntry = NavBackStackEntry for the "rankup" route
+
                 // Get the dashboard back stack entry so we can retrieve its ViewModel.
-                // remember() caches the result so it isn't recomputed on every recomposition.
-                val dashboardEntry = remember(navController) {
+                // remember(backStackEntry) — keyed on the rankup entry — satisfies the Navigation
+                // Compose requirement that getBackStackEntry() calls during composition be keyed
+                // on a NavBackStackEntry rather than on navController alone.
+                val dashboardEntry = remember(backStackEntry) {
                     navController.getBackStackEntry(Routes.DASHBOARD)
                 }
 
                 // Retrieve the SAME DashboardViewModel instance that DashboardScreen is using.
-                // This ensures onRankUpCelebrationComplete() clears the event on the right object.
+                // viewModel(dashboardEntry) scopes the lookup to the dashboard entry's ViewModelStore,
+                // returning the existing instance — not a new one. This ensures that
+                // onRankUpCelebrationComplete() clears rankUpEvent on the correct object.
                 val dashboardViewModel: DashboardViewModel = viewModel(dashboardEntry)
 
                 // uiState holds rankUpEvent — the Rank object the user just achieved.
-                // We observe it here to pass newRank to RankUpScreen.
+                // We read .value directly (not observeAsState) because we only need the
+                // snapshot at the moment this composable runs. The LaunchedEffect in
+                // DashboardScreen already guaranteed rankUpEvent is non-null before navigating here.
                 val uiState = dashboardViewModel.uiState.value
 
                 // Guard: if somehow we arrive here with no rankUpEvent, pop back immediately.
-                // This prevents a blank RankUpScreen if the event was already cleared.
+                // This prevents a blank RankUpScreen if the event was already cleared
+                // (e.g. config change between navigate() and composition).
                 if (uiState?.rankUpEvent == null) {
                     navController.popBackStack()
                     return@composable
