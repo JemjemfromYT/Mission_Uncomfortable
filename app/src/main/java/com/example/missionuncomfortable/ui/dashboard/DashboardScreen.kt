@@ -98,6 +98,22 @@
  *             Level 3 Challenger→ badge_challenger (shield + sword)
  *             Level 4 Conqueror → badge_conqueror  (eagle wings)
  *             Level 5 Sovereign → badge_sovereign  (military crown)
+ *
+ *   v5 — SWAP MISSION BLOCKED (motivational popup):
+ *          1. The "SWAP MISSION" button no longer swaps the mission.
+ *             Instead, tapping it shows a motivational AlertDialog that tells the user
+ *             skipping is forbidden and they must face the challenge.
+ *             This reinforces the app's core philosophy: discomfort must be confronted,
+ *             not escaped.
+ *          2. SwapBlockedDialog composable added (new in v5).
+ *             It is a standalone, reusable private composable so it can be evolved later
+ *             (e.g., randomising from a pool of motivational quotes) without touching MissionCard.
+ *          3. MissionCard: added showSwapBlockedDialog local state (mutableStateOf false).
+ *             The SWAP MISSION button sets showSwapBlockedDialog = true.
+ *             Dismissing the dialog sets it back to false.
+ *          4. The onSwapMission parameter is kept in all composable signatures for
+ *             future use (e.g., if you later want to allow swaps after a penalty,
+ *             or after watching an ad), but it is NOT called from the button.
  */
 
 package com.example.missionuncomfortable.ui.dashboard
@@ -114,8 +130,8 @@ import androidx.compose.foundation.rememberScrollState             // Remembers 
 import androidx.compose.foundation.shape.CircleShape               // Circular shape for difficulty dots
 import androidx.compose.foundation.shape.RoundedCornerShape        // Rounded corners for cards and progress bar
 import androidx.compose.foundation.verticalScroll                  // Makes a Column scrollable vertically
-import androidx.compose.material3.*                                // Material 3 components: Text, Slider, CircularProgressIndicator, etc.
-import androidx.compose.runtime.*                                  // remember, LaunchedEffect, getValue, etc.
+import androidx.compose.material3.*                                // Material 3 components: Text, Slider, AlertDialog, CircularProgressIndicator, etc.
+import androidx.compose.runtime.*                                  // remember, LaunchedEffect, getValue, mutableStateOf, etc.
 import androidx.compose.ui.Alignment                               // Alignment constants (center, start, end, etc.)
 import androidx.compose.ui.Modifier                                // Modifier — the "how does it look and behave" chain
 import androidx.compose.ui.draw.clip                               // Clips a composable to a specific shape
@@ -249,6 +265,9 @@ fun DashboardScreen(
  * @param onMissionClicked         Called when the user taps the card area (for future navigation).
  * @param onAcceptMission          Called when the user taps "ACCEPT THE MISSION".
  * @param onSwapMission            Called when the user taps "SWAP MISSION".
+ *                                 NOTE (v5): The SWAP MISSION button no longer calls this directly.
+ *                                 Instead, it shows a motivational popup (SwapBlockedDialog).
+ *                                 This parameter is kept for future use (e.g., allow swap after a penalty).
  * @param onDiscomfortRatingChanged Called continuously as the user drags the slider.
  * @param onSubmitReflection       Called when the user taps "SUBMIT RATING".
  * @param onViewCompletion         v3: Called when the user taps "VIEW COMPLETION" on a COMPLETED mission.
@@ -337,25 +356,53 @@ private fun RankBadgeSection(rank: Rank) {
     ) {
 
         // ── RANK BADGE IMAGE ───────────────────────────────────────────────
-        // v4: reads rank.badgeResId — each rank now has its own distinct drawable.
-        //   Level 1 Observer   → badge_observer  (open eye)
-        //   Level 2 Initiate   → badge_initiate  (single chevron)
-        //   Level 3 Challenger → badge_challenger (shield + sword)
-        //   Level 4 Conqueror  → badge_conqueror  (eagle wings)
-        //   Level 5 Sovereign  → badge_sovereign  (military crown)
+        // v4: reads rank.badgeResId — each rank has its own distinct drawable.
+        //   Level 1 Observer   → badge_observer   (open eye)
+        //   Level 2 Initiate   → badge_initiate   (single chevron)
+        //   Level 3 Challenger → badge_challenger  (shield + sword)
+        //   Level 4 Conqueror  → badge_conqueror   (eagle wings)
+        //   Level 5 Sovereign  → badge_sovereign   (military crown)
         //
-        // checkNotNull() crashes loudly in testing if a future rank is added to ALL_RANKS
-        // without a badgeResId — better than silently showing a wrong image.
-        // ContentScale.Fit: scales the image to fill the 120×120dp frame while maintaining
-        // its aspect ratio. clip(CircleShape): masks the image to a circle.
-        Image(
-            painter = painterResource(id = checkNotNull(rank.badgeResId) { "Rank '${rank.title}' has no badgeResId set" }),
-            contentDescription = "Rank badge for ${rank.title}",   // Accessibility label
-            contentScale = ContentScale.Fit,                         // Scale to fit within bounds
-            modifier = Modifier
-                .size(120.dp)                // 120dp diameter
-                .clip(CircleShape)           // Clip the image to a circle
-        )
+        // v6 FIX: replaced checkNotNull() with a null-safe branch.
+        // The old checkNotNull() crashed on every launch while badgeResId = null in
+        // ALL_RANKS. The placeholder branch below keeps the app runnable during
+        // development; once you add the five badge drawables to res/drawable/ and
+        // fill in the badgeResId fields in DashboardModels.ALL_RANKS, the Image
+        // branch will be used automatically — no code change needed here.
+        if (rank.badgeResId != null) {
+            // Real badge art — ContentScale.Fit scales the drawable to the 120dp
+            // frame while keeping its aspect ratio. CircleShape masks it to a circle.
+            Image(
+                painter = painterResource(id = rank.badgeResId),
+                contentDescription = "Rank badge for ${rank.title}",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .size(120.dp)
+                    .clip(CircleShape)
+            )
+        } else {
+            // Placeholder circle — shown when no badge drawable has been added yet.
+            // Displays the rank's initial letter in gold on a dark circle.
+            // To replace this: add badge drawables to res/drawable/ and set
+            // badgeResId in DashboardModels.ALL_RANKS for each rank.
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(120.dp)
+                    .clip(CircleShape)
+                    .background(ColorSurfaceVariant)
+            ) {
+                Text(
+                    // firstOrNull() + ?: "?" guards against a blank rank title string
+                    // (current data is never blank, but this prevents a latent crash if
+                    // a future rank is added to ALL_RANKS with an empty title).
+                    text = rank.title.firstOrNull()?.uppercase() ?: "?",
+                    color = ColorAccentGold,
+                    fontSize = 48.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
 
         Spacer(modifier = Modifier.height(16.dp))  // Gap between badge and rank title text
 
@@ -520,12 +567,17 @@ private fun XpProgressSection(xpProgress: XpProgress) {
  *
  * v3: VIEW COMPLETION now calls onViewCompletion() instead of onCardClicked().
  *
+ * v5: SWAP MISSION button no longer calls onSwapMission() directly.
+ *     Instead, it sets showSwapBlockedDialog = true, which triggers SwapBlockedDialog —
+ *     a motivational popup telling the user that skipping is forbidden.
+ *     onSwapMission is kept as a parameter for potential future use (e.g., swap-after-penalty).
+ *
  * @param mission                  The mission data to display.
  * @param showReflectionSlider     True when the discomfort slider should be shown.
  * @param currentDiscomfortRating  The live slider value (1–10).
  * @param onCardClicked            Called when the user taps the card body (future navigation).
  * @param onAcceptMission          Called when the user taps "ACCEPT THE MISSION".
- * @param onSwapMission            Called when the user taps "SWAP MISSION".
+ * @param onSwapMission            Kept for future use. NOT called by the SWAP MISSION button in v5.
  * @param onDiscomfortRatingChanged Called as the slider moves.
  * @param onSubmitReflection       Called when the user taps "SUBMIT RATING".
  * @param onViewCompletion         v3: Called when the user taps "VIEW COMPLETION".
@@ -542,6 +594,21 @@ private fun MissionCard(
     onSubmitReflection: () -> Unit,
     onViewCompletion: () -> Unit              // v3: new parameter
 ) {
+    // ── v5: LOCAL DIALOG STATE ────────────────────────────────────────────
+    // Controls whether the "swap is forbidden" motivational dialog is visible.
+    // Starts as false (dialog hidden). Set to true when user taps SWAP MISSION.
+    // Set back to false when the user dismisses the dialog.
+    var showSwapBlockedDialog by remember { mutableStateOf(false) }
+
+    // ── v5: SHOW THE MOTIVATIONAL DIALOG IF STATE IS TRUE ────────────────
+    // SwapBlockedDialog is placed here (above the card Box) so it can appear
+    // as an overlay over the entire screen — not clipped inside the card.
+    if (showSwapBlockedDialog) {
+        SwapBlockedDialog(
+            onDismiss = { showSwapBlockedDialog = false }  // Tapping OK or outside hides the dialog
+        )
+    }
+
     // The card is a dark-grey rounded Box that holds all the card content in a Column.
     Box(
         modifier = Modifier
@@ -660,7 +727,11 @@ private fun MissionCard(
                         )
                     }
 
-                    // "SWAP MISSION" — only shown for location-dependent missions
+                    // ── SWAP MISSION BUTTON (location-dependent missions only) ────
+                    // v5: Tapping this no longer calls onSwapMission().
+                    //     Instead, it shows SwapBlockedDialog — a motivational popup
+                    //     telling the user that skipping is forbidden.
+                    //     The core philosophy of this app is: face the discomfort, don't avoid it.
                     if (mission.isLocationDependent) {
                         Spacer(modifier = Modifier.height(10.dp))
 
@@ -670,7 +741,8 @@ private fun MissionCard(
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(ColorSurfaceVariant)
-                                .clickable(onClick = onSwapMission)
+                                // v5: Set showSwapBlockedDialog = true instead of calling onSwapMission()
+                                .clickable { showSwapBlockedDialog = true }
                                 .padding(vertical = 14.dp)
                         ) {
                             Text(
@@ -735,6 +807,96 @@ private fun MissionCard(
             }
         }
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v5 NEW COMPOSABLE — Swap Blocked Dialog (motivational popup)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * SwapBlockedDialog — a motivational AlertDialog shown when the user taps "SWAP MISSION".
+ *
+ * NEW in v5. The core philosophy of this app is that discomfort must be confronted,
+ * not escaped. Rather than letting the user silently swap to an easier mission,
+ * we intercept the attempt and remind them why they are here.
+ *
+ * Design decisions:
+ *   - The title is short and declarative — it immediately sets the tone.
+ *   - The body message is motivational, not punishing. It acknowledges that the
+ *     mission is hard, then pushes the user forward anyway.
+ *   - There is only ONE button ("I WILL FACE IT") — there is no "skip anyway" escape hatch.
+ *     Pressing it dismisses the dialog and returns the user to their original mission.
+ *   - The dialog uses Material 3 AlertDialog so it inherits the dark theme
+ *     automatically from MaterialTheme (set in MainActivity).
+ *
+ * Future ideas:
+ *   - Randomise the body message from a pool of motivational quotes so it feels
+ *     fresh even if the user taps SWAP MISSION repeatedly.
+ *   - Add a "Why is this important?" expandable section with a short paragraph on
+ *     the science of voluntary discomfort exposure.
+ *   - After 3 taps in a session, unlock a genuine swap (with a streak-risk warning).
+ *
+ * @param onDismiss  Called when the user taps "I WILL FACE IT" or taps outside the dialog.
+ *                   The caller (MissionCard) uses this to set showSwapBlockedDialog = false.
+ */
+@Composable
+private fun SwapBlockedDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        // onDismissRequest fires when the user taps outside the dialog area.
+        // We treat that the same as tapping "I WILL FACE IT" — dialog closes.
+        onDismissRequest = onDismiss,
+
+        // ── DIALOG TITLE ─────────────────────────────────────────────────────
+        // Short, declarative, stoic. No question marks — this is a statement.
+        title = {
+            Text(
+                text = "Skipping is forbidden.",
+                color = ColorTextPrimary,            // Off-white — primary text colour
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
+        },
+
+        // ── DIALOG BODY MESSAGE ───────────────────────────────────────────────
+        // Motivational — acknowledges difficulty, then redirects the user forward.
+        // This is the heart of the app's philosophy: you face it, even when it's hard.
+        text = {
+            Text(
+                text = "Sometimes it will be hard.\nSometimes it will feel impossible.\n\nThat is exactly why you must face it.\n\nThe discomfort you feel right now is the mission working. Stay.",
+                color = ColorTextSecondary,          // Muted grey — body text, not headline
+                fontSize = 14.sp,
+                lineHeight = 22.sp                   // Comfortable line height for multi-line text
+            )
+        },
+
+        // ── CONFIRM BUTTON ────────────────────────────────────────────────────
+        // Only one button — no escape hatch. "I WILL FACE IT" is the only option.
+        // This is intentional: the user committed to this challenge. Hold them to it.
+        confirmButton = {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(ColorAccentGold)     // Gold button — same as "ACCEPT THE MISSION"
+                    .clickable(onClick = onDismiss)   // Dismiss the dialog and return to the mission
+                    .padding(vertical = 14.dp)
+            ) {
+                Text(
+                    text = "I WILL FACE IT",
+                    color = Color(0xFF0D0D0D),        // Near-black text on gold — high contrast
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.5.sp
+                )
+            }
+        },
+
+        // ── DIALOG CONTAINER COLOUR ───────────────────────────────────────────
+        // Set the dialog background to the dark surface colour so it matches the app's aesthetic.
+        // Without this, AlertDialog would use Material 3's default light-ish container colour.
+        containerColor = ColorSurface
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

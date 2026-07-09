@@ -320,11 +320,32 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
      * @param dateStr  Date string in "yyyy-MM-dd" format (matches sdf pattern).
      * @return The epoch day as a Long. Returns 0L if dateStr cannot be parsed.
      */
+    /**
+     * dateToEpochDay — converts a "yyyy-MM-dd" string to an epoch day number.
+     *
+     * Uses a UTC-midnight Calendar instead of `parsedDate.time / 86_400_000`.
+     * The simple division is wrong around DST transitions where a calendar day
+     * spans only 23 or 25 hours — the division would yield a non-integer or
+     * skip a day, making consecutive-day streak detection produce diffs of 0 or 2
+     * instead of 1. Anchoring to UTC midnight eliminates the timezone offset entirely.
+     *
+     * @param dateStr  Date string in "yyyy-MM-dd" format (matches sdf pattern).
+     * @return The epoch day as a Long. Returns 0L if dateStr cannot be parsed.
+     */
     private fun dateToEpochDay(dateStr: String): Long {
         return try {
             val date = sdf.parse(dateStr) ?: return 0L
-            // Convert milliseconds since epoch to days since epoch
-            date.time / (24L * 60L * 60L * 1000L)
+            // Build a Calendar in UTC so DST offsets are not included.
+            // Setting hour/minute/second/millisecond to 0 pins the timestamp to
+            // exactly midnight UTC on the given date, making the ms-to-days
+            // conversion exact for every day of the year.
+            val cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"), Locale.US)
+            cal.time = date
+            cal.set(Calendar.HOUR_OF_DAY, 0)
+            cal.set(Calendar.MINUTE, 0)
+            cal.set(Calendar.SECOND, 0)
+            cal.set(Calendar.MILLISECOND, 0)
+            cal.timeInMillis / (24L * 60L * 60L * 1000L)
         } catch (e: Exception) {
             0L
         }
