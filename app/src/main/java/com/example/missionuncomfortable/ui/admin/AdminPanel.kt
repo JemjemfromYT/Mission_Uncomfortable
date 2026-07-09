@@ -120,8 +120,8 @@ private const val KEY_STREAK_COUNT     = "streak_count"
 /** String "yyyy-MM-dd" — last date the streak was updated. */
 private const val KEY_LAST_STREAK_DATE = "last_streak_date"
 
-/** Int — all-time best streak. */
-private const val KEY_BEST_STREAK      = "best_streak"
+// KEY_BEST_STREAK intentionally omitted — AdminPanel does not display or modify
+// best_streak directly. It is managed automatically by DashboardViewModel.
 
 /** String — JSON array of CompletedMissionEntry objects. */
 private const val KEY_HISTORY_JSON     = "mission_history_json"

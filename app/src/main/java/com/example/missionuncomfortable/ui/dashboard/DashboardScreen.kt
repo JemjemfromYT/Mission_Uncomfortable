@@ -224,9 +224,12 @@ fun DashboardScreen(
             // v3: isDailyComplete is set to true by ViewModel.onViewCompletion().
             // Show the "Come back tomorrow" screen instead of the mission card.
             // We still pass xpProgress so the user can see their updated XP total.
+            // v7: Pass onAdminTriggered so admin is reachable from this screen too.
+            //     Secret tap target: the "MISSION COMPLETE" gold text at the top.
             uiState.isDailyComplete -> {
                 DailyCompleteScreen(
-                    xpProgress = uiState.xpProgress  // May be null if somehow reached without data
+                    xpProgress       = uiState.xpProgress,  // May be null if somehow reached without data
+                    onAdminTriggered = { showAdminPanel = true }
                 )
             }
 
@@ -1052,11 +1055,26 @@ private fun SwapBlockedDialog(onDismiss: () -> Unit) {
  *   After submitting a rating, the user's XP has just gone up. Showing the updated bar
  *   here gives them a satisfying moment of seeing their progress before the app goes quiet.
  *
- * @param xpProgress  The updated XP data (after mission XP was added). Null if somehow
- *                    reached without data (defensive — shouldn't happen in practice).
+ * v7: Added onAdminTriggered parameter. The secret 7-tap gesture is attached to
+ *     the "MISSION COMPLETE" label at the top so admin is reachable even after
+ *     today's mission is done (when the badge is not visible on screen).
+ *
+ * @param xpProgress       The updated XP data (after mission XP was added). Null if somehow
+ *                         reached without data (defensive — shouldn't happen in practice).
+ * @param onAdminTriggered v7: Called when the secret 7-tap gesture completes.
+ *                         Fires from tapping "MISSION COMPLETE" text 7× within 3 seconds.
  */
 @Composable
-private fun DailyCompleteScreen(xpProgress: XpProgress?) {
+private fun DailyCompleteScreen(
+    xpProgress: XpProgress?,
+    onAdminTriggered: () -> Unit          // v7: secret admin tap target on this screen
+) {
+    // ── v7: SECRET TAP STATE ──────────────────────────────────────────────────
+    // Same logic as RankBadgeSection: 7 taps within 3 seconds fires onAdminTriggered().
+    // Attached to the "MISSION COMPLETE" gold label — natural tap target, invisible trigger.
+    var tapCount     by remember { mutableStateOf(0) }
+    var firstTapTime by remember { mutableStateOf(0L) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1066,12 +1084,29 @@ private fun DailyCompleteScreen(xpProgress: XpProgress?) {
     ) {
 
         // ── COMPLETION HEADER ─────────────────────────────────────────────
+        // v7: This Text is the secret admin tap target on this screen.
+        // Tapping it 7 times within 3 seconds opens the admin panel.
+        // No visual feedback is shown — completely invisible to regular users.
         Text(
             text = "MISSION COMPLETE",
             color = ColorAccentGold,
             fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold,
-            letterSpacing = 3.sp
+            letterSpacing = 3.sp,
+            modifier = Modifier.clickable {
+                val now = System.currentTimeMillis()
+                if (tapCount == 0 || now - firstTapTime > 3_000L) {
+                    tapCount     = 1
+                    firstTapTime = now
+                } else {
+                    tapCount++
+                    if (tapCount >= 7) {
+                        tapCount     = 0
+                        firstTapTime = 0L
+                        onAdminTriggered()
+                    }
+                }
+            }
         )
 
         Spacer(modifier = Modifier.height(12.dp))
