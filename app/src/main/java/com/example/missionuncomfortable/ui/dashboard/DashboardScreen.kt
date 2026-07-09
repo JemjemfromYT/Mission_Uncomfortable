@@ -145,6 +145,9 @@ import androidx.compose.ui.unit.sp                                 // Scale-inde
 import androidx.compose.runtime.livedata.observeAsState            // Bridges LiveData → Compose State
 import androidx.lifecycle.viewmodel.compose.viewModel              // Gets or creates a ViewModel scoped to this composable
 import kotlin.math.roundToInt                                      // Accurate Float-to-Int rounding for the discomfort slider
+// Admin panel — secret testing overlay (v7: new).
+// Activation: tap the rank badge 7 times rapidly on the Dashboard.
+import com.example.missionuncomfortable.ui.admin.AdminPanel
 
 // ─── COLOUR CONSTANTS ────────────────────────────────────────────────────────
 // Defined here so if we ever want to change the design system colours, we change them in ONE place.
@@ -186,6 +189,12 @@ fun DashboardScreen(
     // Observe the ViewModel's LiveData as a Compose State.
     // The `?: DashboardUiState()` provides a safe default while the first value arrives.
     val uiState by viewModel.uiState.observeAsState(DashboardUiState())
+
+    // ── v7: ADMIN PANEL STATE ─────────────────────────────────────────────────
+    // Controls whether the secret admin overlay is visible.
+    // Activated by tapping the rank badge 7 times rapidly (handled in RankBadgeSection).
+    // False by default — the panel is invisible to regular users.
+    var showAdminPanel by remember { mutableStateOf(false) }
 
     // The outer Box fills the entire screen with the dark background colour.
     // Everything else is drawn on top of this Box.
@@ -241,10 +250,24 @@ fun DashboardScreen(
                         onMissionAbandoned = { viewModel.onMissionAbandoned() }, // v6: "I COULDN'T DO IT"
                         onDiscomfortRatingChanged = { rating -> viewModel.onDiscomfortRatingChanged(rating) },
                         onSubmitReflection = { viewModel.onSubmitReflection() },
-                        onViewCompletion = { viewModel.onViewCompletion() }  // v3: new callback
+                        onViewCompletion = { viewModel.onViewCompletion() },     // v3: new callback
+                        // v7: callback fired when the secret tap sequence completes in RankBadgeSection.
+                        // Sets showAdminPanel = true, which renders AdminPanel as an overlay above all content.
+                        onAdminTriggered = { showAdminPanel = true }
                     )
                 }
             }
+        }
+
+        // ── v7: ADMIN PANEL OVERLAY ───────────────────────────────────────────
+        // Rendered as a child of the root Box so it floats above ALL content
+        // (including DailyCompleteScreen, LoadingScreen, and DashboardContent).
+        // Only visible after the secret 7-tap gesture on the rank badge.
+        if (showAdminPanel) {
+            AdminPanel(
+                onDismiss = { showAdminPanel = false },
+                onRefresh = { viewModel.onRefresh() }   // Reload ViewModel state from updated prefs
+            )
         }
     }
 }
@@ -291,7 +314,8 @@ private fun DashboardContent(
     onMissionAbandoned: () -> Unit,          // v6: "I COULDN'T DO IT" → resets to ACTIVE
     onDiscomfortRatingChanged: (Int) -> Unit,
     onSubmitReflection: () -> Unit,
-    onViewCompletion: () -> Unit              // v3: new parameter
+    onViewCompletion: () -> Unit,            // v3: new parameter
+    onAdminTriggered: () -> Unit             // v7: called when secret 7-tap gesture completes
 ) {
     // rememberScrollState() tracks scroll position so it survives recompositions
     val scrollState = rememberScrollState()
@@ -312,7 +336,9 @@ private fun DashboardContent(
 
         // ── SECTION 1: Rank Badge ─────────────────────────────────────────────
         // Displays a large badge image + the rank name below it.
-        RankBadgeSection(rank = xpProgress.currentRank)
+        // v7: onAdminTriggered is passed through so RankBadgeSection can fire it
+        //     after detecting the secret 7-tap gesture on the badge image.
+        RankBadgeSection(rank = xpProgress.currentRank, onSecretTap = onAdminTriggered)
 
         Spacer(modifier = Modifier.height(28.dp))  // Vertical gap between badge and XP bar
 
@@ -354,10 +380,27 @@ private fun DashboardContent(
  * The ?: fallback to rank_badge_placeholder is retained as a safety net in case
  * a rank is added to ALL_RANKS without a badge being created yet.
  *
- * @param rank  The user's current Rank object (level, title, description, badgeResId).
+ * v7: Added onSecretTap parameter and 7-tap secret detection.
+ *     Tapping the badge 7 times within 3 seconds fires onSecretTap(),
+ *     which DashboardScreen uses to show the AdminPanel overlay.
+ *
+ * @param rank         The user's current Rank object (level, title, description, badgeResId).
+ * @param onSecretTap  v7: Called when the secret 7-tap gesture completes. Used to show AdminPanel.
  */
 @Composable
-private fun RankBadgeSection(rank: Rank) {
+private fun RankBadgeSection(rank: Rank, onSecretTap: () -> Unit) {
+    // ── v7: SECRET TAP DETECTION STATE ───────────────────────────────────────
+    // Tracks how many times the badge has been tapped and when the first tap happened.
+    // If 7 taps occur within 3 seconds of the first tap, onSecretTap() is fired.
+    // If more than 3 seconds pass between the first and a subsequent tap, the count resets.
+    //
+    // Why 7 taps / 3 seconds?
+    //   - 7 taps is too many to happen accidentally during normal use.
+    //   - 3 seconds is short enough that only deliberate rapid tapping triggers it.
+    //   - The gesture is memorable but completely invisible — no visual indicator.
+    var tapCount      by remember { mutableStateOf(0) }
+    var firstTapTime  by remember { mutableStateOf(0L) }
+
     // Centre everything in this section horizontally
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -372,12 +415,34 @@ private fun RankBadgeSection(rank: Rank) {
         //   Level 4 Conqueror  → badge_conqueror   (eagle wings)
         //   Level 5 Sovereign  → badge_sovereign   (military crown)
         //
-        // v6 FIX: replaced checkNotNull() with a null-safe branch.
-        // The old checkNotNull() crashed on every launch while badgeResId = null in
-        // ALL_RANKS. The placeholder branch below keeps the app runnable during
-        // development; once you add the five badge drawables to res/drawable/ and
-        // fill in the badgeResId fields in DashboardModels.ALL_RANKS, the Image
-        // branch will be used automatically — no code change needed here.
+        // v6 FIX: replaced checkNotNull() with a null-safe branch (no crash on null badgeResId).
+        // v7: Wrapped in a clickable for secret tap detection (tap × 7 within 3 seconds).
+        //
+        // The secret tap logic:
+        //   1. On first tap: record current timestamp as firstTapTime, set tapCount = 1.
+        //   2. On subsequent taps within 3 seconds: increment tapCount.
+        //      If tapCount reaches 7 → call onSecretTap() and reset counter.
+        //   3. If a tap arrives more than 3 seconds after firstTapTime → reset and start over.
+        val badgeSecretModifier = Modifier
+            .size(120.dp)
+            .clip(CircleShape)
+            .clickable {
+                val now = System.currentTimeMillis()
+                if (tapCount == 0 || now - firstTapTime > 3_000L) {
+                    // Either first tap ever, or previous sequence timed out — start fresh.
+                    tapCount     = 1
+                    firstTapTime = now
+                } else {
+                    tapCount++
+                    if (tapCount >= 7) {
+                        // Secret gesture complete! Fire the callback and reset.
+                        tapCount     = 0
+                        firstTapTime = 0L
+                        onSecretTap()
+                    }
+                }
+            }
+
         if (rank.badgeResId != null) {
             // Real badge art — ContentScale.Fit scales the drawable to the 120dp
             // frame while keeping its aspect ratio. CircleShape masks it to a circle.
@@ -385,26 +450,20 @@ private fun RankBadgeSection(rank: Rank) {
                 painter = painterResource(id = rank.badgeResId),
                 contentDescription = "Rank badge for ${rank.title}",
                 contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .size(120.dp)
-                    .clip(CircleShape)
+                modifier = badgeSecretModifier   // v7: clickable for secret tap detection
             )
         } else {
             // Placeholder circle — shown when no badge drawable has been added yet.
             // Displays the rank's initial letter in gold on a dark circle.
-            // To replace this: add badge drawables to res/drawable/ and set
-            // badgeResId in DashboardModels.ALL_RANKS for each rank.
+            // To replace: add badge drawables to res/drawable/ and set badgeResId
+            // in DashboardModels.ALL_RANKS for each rank.
             Box(
                 contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .size(120.dp)
-                    .clip(CircleShape)
+                modifier = badgeSecretModifier   // v7: same clickable applied to placeholder
                     .background(ColorSurfaceVariant)
             ) {
                 Text(
-                    // firstOrNull() + ?: "?" guards against a blank rank title string
-                    // (current data is never blank, but this prevents a latent crash if
-                    // a future rank is added to ALL_RANKS with an empty title).
+                    // firstOrNull() + ?: "?" guards against a blank rank title string.
                     text = rank.title.firstOrNull()?.uppercase() ?: "?",
                     color = ColorAccentGold,
                     fontSize = 48.sp,
