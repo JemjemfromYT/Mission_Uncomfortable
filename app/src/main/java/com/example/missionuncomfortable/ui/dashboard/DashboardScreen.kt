@@ -806,6 +806,9 @@ private fun MissionCard(
     // Controls whether the "swap is forbidden" motivational dialog is visible.
     // Starts as false (dialog hidden). Set to true when user taps SWAP MISSION.
     // Set back to false when the user dismisses the dialog.
+    // @Suppress: the compiler warns "assigned value is never read" inside the clickable
+    // and onDismiss lambdas because it can't see Compose recomposition reads the state.
+    @Suppress("UNUSED_VALUE")
     var showSwapBlockedDialog by remember { mutableStateOf(false) }
 
     // ── v5: SHOW THE MOTIVATIONAL DIALOG IF STATE IS TRUE ────────────────

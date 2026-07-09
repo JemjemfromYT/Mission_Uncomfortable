@@ -179,6 +179,9 @@ fun RankUpScreen(
     // ── ANIMATION STATE ───────────────────────────────────────────────────────
     // Single boolean flag — when true, all animations play to their target values.
     // Set to true on the first composition (LaunchedEffect(Unit)).
+    // @Suppress: the compiler warns "assigned value is never read" because it can't see
+    // that Compose recomposition reads animationsStarted via the delegated property.
+    @Suppress("UNUSED_VALUE")
     var animationsStarted by remember { mutableStateOf(false) }
 
     // ── BADGE SCALE ───────────────────────────────────────────────────────────
