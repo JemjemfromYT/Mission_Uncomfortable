@@ -82,6 +82,10 @@
 
 package com.example.missionuncomfortable.ui.dashboard
 
+// R is needed to reference drawable resource IDs (R.drawable.badge_xxx).
+// This is the only import in DashboardModels — kept minimal by design.
+import com.example.missionuncomfortable.R
+
 // ─────────────────────────────────────────────────────────────────────────────
 // MISSION STATUS ENUM
 // ─────────────────────────────────────────────────────────────────────────────
@@ -154,15 +158,17 @@ enum class MissionCategory {
  * @param xpRequired   The total XP needed to reach (and hold) this rank.
  *                     Level 1 starts at 0 XP.
  * @param badgeResId   Android drawable resource ID for the rank badge image.
- *                     Null if no badge has been created yet (app will crash in testing
- *                     via checkNotNull() — this is intentional, to catch missing badges).
+ *                     Null shows a letter-circle placeholder (safe — no crash).
+ *                     v2: checkNotNull() removed from DashboardScreen.RankBadgeSection —
+ *                     a null badgeResId now shows a placeholder instead of crashing.
+ *                     All 5 ranks now have their drawables connected (see ALL_RANKS below).
  */
 data class Rank(
     val level: Int,
     val title: String,
     val description: String,
     val xpRequired: Int,
-    val badgeResId: Int? = null   // Set to R.drawable.badge_xxx for each rank
+    val badgeResId: Int? = null   // Nullable so future ranks compile before a badge is added
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -191,35 +197,41 @@ val ALL_RANKS = listOf(
         title       = "The Observer",
         description = "You are watching. The first step is noticing.",
         xpRequired  = 0,
-        badgeResId  = null   // Replace with R.drawable.badge_observer
+        // v2: connected to badge drawable — was null until drawables were added to res/drawable/.
+        // File: app/src/main/res/drawable/badge_observer.xml
+        badgeResId  = R.drawable.badge_observer
     ),
     Rank(
         level       = 2,
         title       = "The Initiate",
         description = "You have begun. Most people never do.",
         xpRequired  = 200,
-        badgeResId  = null   // Replace with R.drawable.badge_initiate
+        // File: app/src/main/res/drawable/badge_initiate.xml
+        badgeResId  = R.drawable.badge_initiate
     ),
     Rank(
         level       = 3,
         title       = "The Challenger",
         description = "You seek difficulty on purpose. That is rare.",
         xpRequired  = 500,
-        badgeResId  = null   // Replace with R.drawable.badge_challenger
+        // File: app/src/main/res/drawable/badge_challenger.xml
+        badgeResId  = R.drawable.badge_challenger
     ),
     Rank(
         level       = 4,
         title       = "The Conqueror",
         description = "Discomfort does not stop you. It fuels you.",
         xpRequired  = 900,
-        badgeResId  = null   // Replace with R.drawable.badge_conqueror
+        // File: app/src/main/res/drawable/badge_conqueror.xml
+        badgeResId  = R.drawable.badge_conqueror
     ),
     Rank(
         level       = 5,
         title       = "The Sovereign",
         description = "You have become someone who cannot be intimidated.",
         xpRequired  = 1500,
-        badgeResId  = null   // Replace with R.drawable.badge_sovereign
+        // File: app/src/main/res/drawable/badge_sovereign.xml
+        badgeResId  = R.drawable.badge_sovereign
     )
 )
 
