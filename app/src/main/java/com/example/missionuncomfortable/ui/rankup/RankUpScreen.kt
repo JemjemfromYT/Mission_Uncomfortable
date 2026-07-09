@@ -179,10 +179,12 @@ fun RankUpScreen(
     // ── ANIMATION STATE ───────────────────────────────────────────────────────
     // Single boolean flag — when true, all animations play to their target values.
     // Set to true on the first composition (LaunchedEffect(Unit)).
-    // @Suppress: the compiler warns "assigned value is never read" because it can't see
-    // that Compose recomposition reads animationsStarted via the delegated property.
-    @Suppress("UNUSED_VALUE")
-    var animationsStarted by remember { mutableStateOf(false) }
+    // Using explicit MutableState (not `by` delegation) so the compiler can see that
+    // animationsStarted.value is read by the animateXAsState targetValue expressions.
+    // `by` delegation triggers a false "assigned value is never read" warning on the
+    // `= true` assignment inside LaunchedEffect because the compiler only sees a setter
+    // call and cannot trace Compose's recomposition reads across lambda boundaries.
+    val animationsStarted = remember { mutableStateOf(false) }
 
     // ── BADGE SCALE ───────────────────────────────────────────────────────────
     // Springs from 0 (invisible) to 1 (full size).
@@ -190,7 +192,7 @@ fun RankUpScreen(
     // the badge "lands" with weight rather than just fading in.
     // v2: Applied to the full glow container so badge + glow scale in together.
     val badgeScale by animateFloatAsState(
-        targetValue = if (animationsStarted) 1f else 0f,
+        targetValue = if (animationsStarted.value) 1f else 0f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness    = Spring.StiffnessMedium
@@ -201,7 +203,7 @@ fun RankUpScreen(
     // ── HEADER + TITLE ALPHA ──────────────────────────────────────────────────
     // "YOU ARE NOW" label and rank title fade in together, 400ms after animations start.
     val titleAlpha by animateFloatAsState(
-        targetValue    = if (animationsStarted) 1f else 0f,
+        targetValue    = if (animationsStarted.value) 1f else 0f,
         animationSpec  = tween(durationMillis = 500, delayMillis = 400),
         label          = "TitleAlpha"
     )
@@ -209,7 +211,7 @@ fun RankUpScreen(
     // ── DESCRIPTION ALPHA ─────────────────────────────────────────────────────
     // Rank description fades in 300ms after the title — staggered for drama.
     val descriptionAlpha by animateFloatAsState(
-        targetValue    = if (animationsStarted) 1f else 0f,
+        targetValue    = if (animationsStarted.value) 1f else 0f,
         animationSpec  = tween(durationMillis = 500, delayMillis = 700),
         label          = "DescriptionAlpha"
     )
@@ -218,7 +220,7 @@ fun RankUpScreen(
     // CONTINUE button slides up from 40dp below its final position.
     // Starts at +40dp (below), animates to 0dp (final position).
     val buttonOffset by animateDpAsState(
-        targetValue    = if (animationsStarted) 0.dp else 40.dp,
+        targetValue    = if (animationsStarted.value) 0.dp else 40.dp,
         animationSpec  = tween(durationMillis = 500, delayMillis = 500),
         label          = "ButtonOffset"
     )
@@ -267,9 +269,9 @@ fun RankUpScreen(
 
     // ── START ANIMATIONS ──────────────────────────────────────────────────────
     // LaunchedEffect(Unit) runs once on first composition.
-    // Setting animationsStarted = true triggers all animateXAsState values above.
+    // Setting animationsStarted.value = true triggers all animateXAsState values above.
     LaunchedEffect(Unit) {
-        animationsStarted = true
+        animationsStarted.value = true
     }
 
     // ── LAYOUT ────────────────────────────────────────────────────────────────

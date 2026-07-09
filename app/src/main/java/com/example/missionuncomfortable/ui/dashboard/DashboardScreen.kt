@@ -806,17 +806,18 @@ private fun MissionCard(
     // Controls whether the "swap is forbidden" motivational dialog is visible.
     // Starts as false (dialog hidden). Set to true when user taps SWAP MISSION.
     // Set back to false when the user dismisses the dialog.
-    // @Suppress: the compiler warns "assigned value is never read" inside the clickable
-    // and onDismiss lambdas because it can't see Compose recomposition reads the state.
-    @Suppress("UNUSED_VALUE")
-    var showSwapBlockedDialog by remember { mutableStateOf(false) }
+    // Using explicit MutableState (not `by` delegation) so the compiler can see the
+    // .value reads in the if() check. `by` delegation triggers a false
+    // "assigned value is never read" warning on the assignments inside lambdas
+    // because the compiler cannot trace Compose recomposition reads across them.
+    val showSwapBlockedDialog = remember { mutableStateOf(false) }
 
     // ── v5: SHOW THE MOTIVATIONAL DIALOG IF STATE IS TRUE ────────────────
     // SwapBlockedDialog is placed here (above the card Box) so it can appear
     // as an overlay over the entire screen — not clipped inside the card.
-    if (showSwapBlockedDialog) {
+    if (showSwapBlockedDialog.value) {
         SwapBlockedDialog(
-            onDismiss = { showSwapBlockedDialog = false }  // Tapping OK or outside hides the dialog
+            onDismiss = { showSwapBlockedDialog.value = false }  // Tapping OK or outside hides the dialog
         )
     }
 
@@ -952,8 +953,8 @@ private fun MissionCard(
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(ColorSurfaceVariant)
-                                // v5: Set showSwapBlockedDialog = true instead of calling onSwapMission()
-                                .clickable { showSwapBlockedDialog = true }
+                                // v5: Set showSwapBlockedDialog.value = true instead of calling onSwapMission()
+                                .clickable { showSwapBlockedDialog.value = true }
                                 .padding(vertical = 14.dp)
                         ) {
                             Text(
