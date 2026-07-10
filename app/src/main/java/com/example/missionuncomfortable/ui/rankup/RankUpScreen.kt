@@ -114,6 +114,21 @@
  *            Conqueror (4): strong pulsing glow (1600ms half-cycle)
  *            Sovereign (5): rapid full shimmer (1100ms half-cycle) — the apex
  *          New imports: drawBehind, Brush.
+ *
+ *   v3 — GLOW FIX (RING GRADIENT):
+ *          Problem: the v2 gradient went gold-at-centre → transparent-at-edge, but the
+ *          badge Image is drawn ON TOP of the glow and hides the centre, so only the
+ *          already-faded outer rim of the gradient fell in the visible halo — the glow
+ *          was nearly invisible, matching the same bug found on the dashboard badge.
+ *          Fix: switched to Brush.radialGradient(colorStops = ...) — a RING gradient
+ *          that stays transparent under the badge and peaks in gold just OUTSIDE the
+ *          badge's edge (container 200dp / badge 160dp → badge edge at colorStop 0.80,
+ *          ring peaks at 0.82), fading to transparent by the container edge.
+ *          Alpha values raised substantially so the celebration glow reads clearly:
+ *            Initiate  (2): 0.08 → 0.50 static halo.
+ *            Challenger(3): 0.12-0.32 → 0.45-0.80 breathing pulse.
+ *            Conqueror (4): 0.24-0.54 → 0.65-0.95 pulsing glow.
+ *            Sovereign (5): 0.38-0.76 → 0.80-1.00 rapid shimmer.
  */
 
 package com.example.missionuncomfortable.ui.rankup
@@ -165,6 +180,9 @@ private val ColorAccentGold    = Color(0xFFC8A84B)   // Muted gold — CONTINUE 
  *     Badge is now wrapped in a 200dp container that draws the glow via drawBehind.
  *     The spring scale (badgeScale) is applied to the container so badge + glow
  *     animate in together as one unit.
+ * v3: Glow switched from a filled centre→transparent gradient to a RING gradient
+ *     (colorStops) that peaks just outside the badge's edge instead of at its centre,
+ *     which the badge image was hiding. See file header CHANGELOG v3 for details.
  *
  * @param newRank    The rank the user just achieved. Used for badge image,
  *                   title text, and description text.
@@ -241,11 +259,16 @@ fun RankUpScreen(
     //   2200ms → slow and meditative, like a deep breath.
     //   1600ms → noticeable rhythm, clearly pulsing.
     //   1100ms → fast enough to feel electric, not frantic.
+    //
+    // v3 WHY these (higher) alpha values: the ring gradient below (see drawBehind)
+    // concentrates all the gold at the badge's edge instead of hiding it under the badge,
+    // so these values map directly to visible brightness. This screen's intensities run
+    // higher than the dashboard equivalents — this is the payoff moment.
     val (glowAlphaMin, glowAlphaMax, glowDurationMs) = when (newRank.level) {
-        2    -> Triple(0.08f, 0.08f, 3000)   // Initiate:    faint static halo, barely there
-        3    -> Triple(0.12f, 0.32f, 2200)   // Challenger:  slow breathing pulse
-        4    -> Triple(0.24f, 0.54f, 1600)   // Conqueror:   strong pulsing glow
-        else -> Triple(0.38f, 0.76f, 1100)   // Sovereign:   rapid full shimmer — the apex
+        2    -> Triple(0.50f, 0.50f, 3000)   // Initiate:    clearly visible static halo
+        3    -> Triple(0.45f, 0.80f, 2200)   // Challenger:  slow breathing pulse
+        4    -> Triple(0.65f, 0.95f, 1600)   // Conqueror:   strong pulsing glow
+        else -> Triple(0.80f, 1.00f, 1100)   // Sovereign:   rapid full shimmer — the apex
     }
 
     val infiniteGlowTransition = rememberInfiniteTransition(label = "RankUpGlow")
@@ -323,16 +346,21 @@ fun RankUpScreen(
                         scaleY = badgeScale
                     }
                     .drawBehind {
-                        // Radial gold glow — centred on the 200dp container.
-                        // Fades from gold (at the centre) to transparent (at the edge).
-                        // radius = half the container so the glow fills the full 200dp circle.
-                        // The 20dp margin between container (200dp) and badge image (160dp)
-                        // is the halo zone — glow extends 20dp beyond the badge on each side.
+                        // v3 RING gradient, not a filled circle — same fix as the dashboard
+                        // badge: a centre→transparent fade hides its brightest point under
+                        // the badge image, leaving only a faint rim visible. Instead the
+                        // glow peaks just OUTSIDE the badge's edge, where it can be seen.
+                        //
+                        // Container is 200dp (radius 100dp), badge is 160dp (radius 80dp),
+                        // so the badge edge sits at colorStop 0.80. The ring peaks at 0.82,
+                        // just past the badge, and fades to transparent by the container edge.
                         drawCircle(
                             brush = Brush.radialGradient(
-                                colors = listOf(
-                                    ColorAccentGold.copy(alpha = effectiveGlowAlpha),
-                                    Color.Transparent
+                                colorStops = arrayOf(
+                                    0.00f to Color.Transparent,
+                                    0.68f to Color.Transparent,
+                                    0.82f to ColorAccentGold.copy(alpha = effectiveGlowAlpha),
+                                    1.00f to Color.Transparent
                                 ),
                                 radius = size.minDimension / 2f
                             )

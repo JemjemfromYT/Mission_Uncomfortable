@@ -18,6 +18,8 @@
  *                                  v4:  Now reads rank.badgeResId to display rank-specific badge art.
  *                                  v11: Badge enlarged (140dp image / 170dp glow container).
  *                                       Per-rank glow added — each rank has a unique intensity.
+ *                                  v12: Glow switched to a ring gradient (peaks just outside the
+ *                                       badge edge, not hidden under it); container now 200dp.
  *
  *   XpProgressSection()          — Composable for the XP progress bar and labels.
  *                                  v3: The bar animates automatically when xpProgress changes
@@ -137,6 +139,26 @@
  *             Sovereign (5): rapid full shimmer (1100ms half-cycle).
  *          3. New imports: FastOutSlowInEasing, RepeatMode, animateFloat,
  *             infiniteRepeatable, rememberInfiniteTransition, drawBehind, Brush.
+ *
+ *   v12 — GLOW FIX (RING GRADIENT) + BIGGER BADGE:
+ *          Problem: the v11 gradient went gold-at-centre → transparent-at-edge, but the
+ *          badge Image is drawn ON TOP of the glow and covers the centre — so only the
+ *          already-faded outer rim of the gradient fell in the visible halo, making the
+ *          glow nearly invisible (Initiate/Challenger showed nothing at all; Conqueror
+ *          looked like a faint contained circle instead of an escaping glow).
+ *          Fix: switched to Brush.radialGradient(colorStops = ...) — a RING gradient
+ *          that stays transparent under the badge and peaks in gold just OUTSIDE the
+ *          badge's edge, fading to transparent again by the container edge. This puts
+ *          100% of the brightness where it can actually be seen.
+ *          Container enlarged 170dp → 200dp for more visible halo room (badge stays 140dp,
+ *          so badge radius / container radius = 0.70 → ring peaks at colorStop 0.72).
+ *          Alpha values raised substantially across all ranks since the ring wastes none
+ *          of the gradient hidden under the badge:
+ *            Observer  (1): 0.00 / 0.00 — unchanged, no glow.
+ *            Initiate  (2): 0.08 → 0.40 static halo, now clearly visible.
+ *            Challenger(3): 0.10-0.28 → 0.35-0.70 breathing pulse.
+ *            Conqueror (4): 0.20-0.48 → 0.55-0.85 pulsing glow.
+ *            Sovereign (5): 0.32-0.68 → 0.70-1.00 rapid shimmer.
  */
 
 package com.example.missionuncomfortable.ui.dashboard
@@ -451,6 +473,12 @@ private fun DashboardContent(
  *        Conqueror (4): strong pulsing glow (1600ms half-cycle).
  *        Sovereign (5): rapid full shimmer (1100ms half-cycle) — the apex.
  *
+ * v12: Glow switched from a filled centre→transparent gradient to a RING gradient
+ *      (colorStops) that peaks just outside the badge's edge instead of at its centre,
+ *      which the badge image was hiding. Container enlarged 170dp → 200dp for more
+ *      visible halo room; alpha values raised across all ranks. See file header
+ *      CHANGELOG v12 for full reasoning.
+ *
  * @param rank         The user's current Rank object (level, title, description, badgeResId).
  * @param onSecretTap  v7: Called when the secret 7-tap gesture completes. Used to show AdminPanel.
  */
@@ -476,19 +504,20 @@ private fun RankBadgeSection(rank: Rank, onSecretTap: () -> Unit) {
     val glowColor = ColorAccentGold
 
     // Per-rank animation parameters — Triple(minAlpha, maxAlpha, halfCycleDurationMs).
-    //   Levels 1-2: minAlpha == maxAlpha → glow is static, no visible pulse.
-    //   Levels 3-5: minAlpha < maxAlpha  → alpha oscillates, badge breathes.
+    //   Level 1:    no glow at all — nothing has been earned yet.
+    //   Level 2:    static halo (min == max, no pulse) — first visible sign of progress.
+    //   Levels 3-5: pulsing glow — alpha oscillates between min and max on a smooth breath cycle.
     //
-    // Why these values?
-    //   - Observer starts at zero: you have earned nothing yet, the badge is cold.
-    //   - Each rank adds more light: the badge visually reflects accumulated effort.
-    //   - Speed also increases: Sovereign's shimmer is noticeably faster than Challenger's pulse.
+    // v12 WHY these (higher) values: the ring gradient below (see drawBehind) concentrates
+    // all the gold at the badge's edge instead of hiding it under the badge, so these alpha
+    // values translate directly to visible halo brightness — no hidden waste like v11 had.
+    // Speed still increases with rank: Sovereign's shimmer is noticeably faster than Challenger's.
     val (glowAlphaMin, glowAlphaMax, glowDurationMs) = when (rank.level) {
-        1    -> Triple(0.00f, 0.00f, 3000)   // Observer:    no glow at all
-        2    -> Triple(0.08f, 0.08f, 3000)   // Initiate:    faint static halo, barely visible
-        3    -> Triple(0.10f, 0.28f, 2200)   // Challenger:  slow breathing pulse
-        4    -> Triple(0.20f, 0.48f, 1600)   // Conqueror:   strong pulsing glow
-        else -> Triple(0.32f, 0.68f, 1100)   // Sovereign:   rapid shimmer, visibly alive
+        1    -> Triple(0.00f, 0.00f, 3000)   // Observer:    no glow — badge is cold
+        2    -> Triple(0.40f, 0.40f, 3000)   // Initiate:    clearly visible static halo
+        3    -> Triple(0.35f, 0.70f, 2200)   // Challenger:  slow breathing pulse
+        4    -> Triple(0.55f, 0.85f, 1600)   // Conqueror:   strong pulsing glow
+        else -> Triple(0.70f, 1.00f, 1100)   // Sovereign:   rapid full shimmer
     }
 
     val infiniteTransition = rememberInfiniteTransition(label = "BadgeGlow")
@@ -517,9 +546,9 @@ private fun RankBadgeSection(rank: Rank, onSecretTap: () -> Unit) {
     ) {
 
         // ── GLOW CONTAINER + BADGE IMAGE + SECRET TAP ZONE ────────────────────
-        // The 170dp outer Box serves three purposes:
-        //   1. drawBehind: draws the radial glow in this larger space so it extends
-        //      15dp beyond the 140dp badge circle on each side without being clipped.
+        // The 200dp outer Box serves three purposes:
+        //   1. drawBehind: draws the ring glow in this larger space so it extends
+        //      30dp beyond the 140dp badge circle on each side without being clipped.
         //   2. clickable: captures the 7-tap secret gesture across the full badge area.
         //   3. Alignment.Center: keeps the 140dp badge image perfectly centred inside.
         //
@@ -533,18 +562,29 @@ private fun RankBadgeSection(rank: Rank, onSecretTap: () -> Unit) {
         // v6 FIX: replaced checkNotNull() with a null-safe branch (no crash on null badgeResId).
         // v7: clickable captures secret 7-tap gesture (fires onSecretTap after 7 taps in 3s).
         // v11: container enlarged to 170dp; badge image enlarged to 140dp; glow added.
+        // v12: container enlarged again to 200dp; glow switched to a ring gradient (see below).
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
-                .size(170.dp)
+                .size(200.dp)
                 .drawBehind {
-                    // Radial gradient centred on the container. Fades from gold to transparent.
-                    // radius = half the container diameter so the glow fills the full circle.
+                    // v12 RING gradient — not a filled circle.
+                    // A simple centre→transparent fade is USELESS here: the badge image is
+                    // drawn ON TOP and hides the brightest part (the centre), leaving only
+                    // the already-faded outer rim visible. Instead this draws a ring whose
+                    // peak brightness sits just OUTSIDE the badge's edge — the only place
+                    // the glow can actually be seen.
+                    //
+                    // Container is 200dp (radius 100dp), badge is 140dp (radius 70dp),
+                    // so the badge edge sits at colorStop 0.70. The ring peaks at 0.72,
+                    // just past the badge, and fades to transparent by the container edge.
                     drawCircle(
                         brush = Brush.radialGradient(
-                            colors = listOf(
-                                glowColor.copy(alpha = effectiveGlowAlpha),
-                                Color.Transparent
+                            colorStops = arrayOf(
+                                0.00f to Color.Transparent,
+                                0.60f to Color.Transparent,
+                                0.72f to glowColor.copy(alpha = effectiveGlowAlpha),
+                                1.00f to Color.Transparent
                             ),
                             radius = size.minDimension / 2f
                         )
@@ -572,7 +612,7 @@ private fun RankBadgeSection(rank: Rank, onSecretTap: () -> Unit) {
             if (rank.badgeResId != null) {
                 // Real badge art — ContentScale.Fit keeps the SVG aspect ratio inside 140dp.
                 // CircleShape masks to a circle, matching the badge drawables' circular design.
-                // The 30dp margin between container (170dp) and image (140dp) is the glow halo zone.
+                // The 60dp margin between container (200dp) and image (140dp) is the glow halo zone.
                 Image(
                     painter            = painterResource(id = rank.badgeResId),
                     contentDescription = "Rank badge for ${rank.title}",
