@@ -74,6 +74,22 @@
  *        "same ring, different alpha" system with genuinely different per-rank
  *        visual tiers (multi-layer rings, rotating shimmer, radiant rays,
  *        breathing scale) as described above.
+ *
+ *   v2 — BUILD FIX: two import errors caused every InfiniteTransition.animateFloat()
+ *        call and every StrokeCap reference to fail to compile.
+ *          1. androidx.compose.animation.core.animateFloat (the InfiniteTransition
+ *             extension function actually used at the call sites) was never imported —
+ *             only the unrelated top-level `animateFloat` symbols were in scope, so the
+ *             compiler couldn't resolve the call or infer its type parameter.
+ *          2. StrokeCap was imported from androidx.compose.ui.graphics.drawscope, but it
+ *             actually lives in androidx.compose.ui.graphics — the wrong package meant
+ *             "Unresolved reference" everywhere StrokeCap.Round was used.
+ *        No drawing/animation logic changed — imports only.
+ *
+ *   v3 — BUILD FIX: `val x by infiniteTransition.animateFloat(...)` failed with
+ *        "State<Float> has no method getValue" because androidx.compose.runtime.getValue
+ *        (the extension that makes `by` work on a Compose State) was never imported.
+ *        Added the missing import. No drawing/animation logic changed.
  */
 
 package com.example.missionuncomfortable.ui.dashboard
@@ -81,6 +97,7 @@ package com.example.missionuncomfortable.ui.dashboard
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat            // FIX: InfiniteTransition.animateFloat extension — was missing, caused "Unresolved reference" + type-inference errors on every animateFloat call
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -88,15 +105,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue          // FIX: `by` delegate operator for State<Float> — without this, `val x by animateFloat(...)` fails with "has no method getValue"
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap             // FIX: StrokeCap lives in androidx.compose.ui.graphics, NOT .drawscope — wrong package was causing "Unresolved reference"
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.StrokeCap
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
