@@ -70,6 +70,11 @@
  * throughout reading.
  * v5 — Fixed StoryReader page curl logic (added left anchor, corrected left-edge
  * transformOrigin, added zIndex for proper page stacking).
+ * v6 — Flawless Cover Transition. The ClosedBookScene now perfectly matches
+ * the dimensions (300x300) and shadow of the StoryReader. Instead of rotating
+ * the entire book away, only the front cover swings open on a spine hinge,
+ * revealing the actual TitlePage waiting seamlessly underneath it. Z-index
+ * page stacking logic simplified and perfected.
  */
 
 package com.example.missionuncomfortable.ui.ascension
@@ -206,6 +211,7 @@ fun AscensionBookScreen(rank: Rank, onFinish: () -> Unit) {
             BookStage.CLOSED, BookStage.OPENING -> {
                 ClosedBookScene(
                     lore = lore,
+                    rank = rank, // Passed so the underlying TitlePage can render
                     isOpening = stage == BookStage.OPENING,
                     onOpenAnimationComplete = { stage = BookStage.READING },
                     onTap = { if (stage == BookStage.CLOSED) stage = BookStage.OPENING }
@@ -279,13 +285,16 @@ private fun EmberParticles(color: Color) {
 /**
  * ClosedBookScene — the closed book with breathing glow and spine-hinge open animation.
  *
- * Three strips in a Row: spine (left, dark gradient) | cover face (sigil + title) |
- * fore-edge (Canvas of 80 lines simulating stacked page leaves, right side).
- * Rotation is rotationY with TransformOrigin(0f, 0.5f) — pivots on the left/spine edge.
+ * V6 REWRITE: To ensure a flawless transition, this Box is exactly the same 300x300
+ * size and shadow as the StoryReader. It renders the actual TitlePage on Layer 1.
+ * Layer 2 is the Cover, which swings open on a left hinge. When the cover finishes
+ * swinging and fades out, the TitlePage is already perfectly in place, making the
+ * state swap to StoryReader totally invisible.
  */
 @Composable
 private fun ClosedBookScene(
     lore: AscensionLore,
+    rank: Rank,
     isOpening: Boolean,
     onOpenAnimationComplete: () -> Unit,
     onTap: () -> Unit
@@ -300,10 +309,10 @@ private fun ClosedBookScene(
         label = "ClosedBookGlowAlpha"
     )
 
-    // rotationY 0 → -90: cover swings away from the spine, left edge stays fixed.
+    // rotationY 0 → -90: ONLY the cover swings open on its left hinge.
     val openRotation by animateFloatAsState(
         targetValue = if (isOpening) -90f else 0f,
-        animationSpec = tween(durationMillis = 900),
+        animationSpec = tween(durationMillis = 1000),
         label = "BookOpenRotation",
         finishedListener = { if (isOpening) onOpenAnimationComplete() }
     )
@@ -321,105 +330,145 @@ private fun ClosedBookScene(
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
 
-            // ── THE BOOK ──────────────────────────────────────────────────────
-            Row(
+            // ── THE PHYSICAL BOOK BOUNDARY ────────────────────────────────────
+            Box(
                 modifier = Modifier
-                    .graphicsLayer {
-                        rotationY = openRotation
-                        cameraDistance = 14 * density
-                        transformOrigin = TransformOrigin(0f, 0.5f)   // spine hinge
-                        alpha = 1f - (openProgress * 0.85f)
-                    }
+                    .width(300.dp)
                     .height(300.dp)
-                    .shadow(elevation = 16.dp, shape = RoundedCornerShape(10.dp))
-                    .clickable(enabled = !isOpening, onClick = onTap),
-                verticalAlignment = Alignment.CenterVertically
+                    // The shadow matches StoryReader exactly and never rotates away.
+                    .shadow(elevation = 24.dp, shape = RoundedCornerShape(10.dp))
+                    .clickable(enabled = !isOpening, onClick = onTap)
             ) {
-                // Spine
-                Box(
-                    modifier = Modifier
-                        .width(18.dp)
-                        .fillMaxHeight()
-                        .clip(RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp))
-                        .background(
-                            Brush.horizontalGradient(
-                                colors = listOf(Color(0xFF020202), Color(0xFF181818))
-                            )
-                        )
-                )
-
-                // Cover face
-                Box(
-                    modifier = Modifier
-                        .width(200.dp)
-                        .fillMaxHeight()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(lore.theme.mistColor, Color(0xFF0A0A0A))
-                            )
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
+                // ── LAYER 1: BASE OPEN BOOK (Identical to StoryReader Page 0) ──
+                Row(modifier = Modifier.fillMaxSize()) {
+                    // Spine (Always visible)
                     Box(
                         modifier = Modifier
-                            .size(140.dp)
+                            .width(18.dp)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp))
                             .background(
-                                Brush.radialGradient(
-                                    colors = listOf(
-                                        lore.theme.accentColor.copy(alpha = breathingAlpha * 0.5f),
-                                        Color.Transparent
-                                    )
-                                ),
-                                shape = CircleShape
+                                Brush.horizontalGradient(
+                                    colors = listOf(Color(0xFF020202), Color(0xFF2A2218))
+                                )
                             )
                     )
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = lore.theme.sigil, fontSize = 44.sp, color = lore.theme.accentColor)
-                        Spacer(modifier = Modifier.height(18.dp))
-                        Text(
-                            text = lore.bookTitle,
-                            color = lore.theme.hotColor,
-                            fontSize = 15.sp,
-                            fontFamily = FontFamily.Serif,
-                            fontWeight = FontWeight.SemiBold,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 20.dp)
-                        )
-                    }
-                }
 
-                // Fore-edge — 80 lines in alternating shades to simulate page depth.
-                Canvas(
-                    modifier = Modifier
-                        .width(28.dp)
-                        .fillMaxHeight()
-                        .clip(RoundedCornerShape(topEnd = 8.dp, bottomEnd = 8.dp))
-                        .background(Color(0xFF0E0E0E))
-                ) {
-                    val lineCount = 80
-                    val spacing = size.height / lineCount
-                    for (i in 0 until lineCount) {
-                        val y = i * spacing + spacing * 0.5f
-                        val lineAlpha = when {
-                            i % 3 == 0 -> 0.65f
-                            i % 2 == 0 -> 0.40f
-                            else       -> 0.22f
+                    // The Title Page (Waiting underneath the cover)
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(topEnd = 10.dp, bottomEnd = 10.dp))
+                            .background(ColorPageParchment),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 20.dp, vertical = 24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            TitlePage(lore = lore, rank = rank)
                         }
-                        drawLine(
-                            color = lore.theme.accentColor.copy(alpha = lineAlpha),
-                            start = Offset(0f, y),
-                            end = Offset(size.width, y),
-                            strokeWidth = if (i % 3 == 0) 1.5f else 0.8f
-                        )
                     }
                 }
-            }
 
-            // Breathing drop shadow beneath the book.
+                // ── LAYER 2: THE SWINGING COVER ────────────────────────────────
+                // Placed exactly over the Title Page, offset by the 18dp spine.
+                Row(modifier = Modifier.fillMaxSize()) {
+                    Spacer(modifier = Modifier.width(18.dp)) // Leave the spine exposed
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .graphicsLayer {
+                                // Hinge exactly at the left edge of the cover (right of spine)
+                                transformOrigin = TransformOrigin(0f, 0.5f)
+                                rotationY = openRotation
+                                cameraDistance = 24 * density
+                                // Fade the cover out in the final 15 degrees to prevent edge-on artifacts
+                                alpha = if (openRotation < -75f) (90f + openRotation) / 15f else 1f
+                            }
+                            .clip(RoundedCornerShape(topEnd = 10.dp, bottomEnd = 10.dp))
+                    ) {
+                        // Cover components: Face + Fore-edge
+                        Row(modifier = Modifier.fillMaxSize()) {
+                            // Cover face
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .background(
+                                        Brush.verticalGradient(
+                                            colors = listOf(lore.theme.mistColor, Color(0xFF0A0A0A))
+                                        )
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(140.dp)
+                                        .background(
+                                            Brush.radialGradient(
+                                                colors = listOf(
+                                                    lore.theme.accentColor.copy(alpha = breathingAlpha * 0.5f),
+                                                    Color.Transparent
+                                                )
+                                            ),
+                                            shape = CircleShape
+                                        )
+                                )
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(text = lore.theme.sigil, fontSize = 44.sp, color = lore.theme.accentColor)
+                                    Spacer(modifier = Modifier.height(18.dp))
+                                    Text(
+                                        text = lore.bookTitle,
+                                        color = lore.theme.hotColor,
+                                        fontSize = 15.sp,
+                                        fontFamily = FontFamily.Serif,
+                                        fontWeight = FontWeight.SemiBold,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.padding(horizontal = 20.dp)
+                                    )
+                                }
+                            }
+
+                            // Fore-edge — lines simulating page leaves
+                            Canvas(
+                                modifier = Modifier
+                                    .width(28.dp)
+                                    .fillMaxHeight()
+                                    .background(Color(0xFF0E0E0E))
+                            ) {
+                                val lineCount = 80
+                                val spacing = size.height / lineCount
+                                for (i in 0 until lineCount) {
+                                    val y = i * spacing + spacing * 0.5f
+                                    val lineAlpha = when {
+                                        i % 3 == 0 -> 0.65f
+                                        i % 2 == 0 -> 0.40f
+                                        else       -> 0.22f
+                                    }
+                                    drawLine(
+                                        color = lore.theme.accentColor.copy(alpha = lineAlpha),
+                                        start = Offset(0f, y),
+                                        end = Offset(size.width, y),
+                                        strokeWidth = if (i % 3 == 0) 1.5f else 0.8f
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            } // End Book Box
+
+            // Breathing drop shadow beneath the book (fades as it opens).
             Box(
                 modifier = Modifier
                     .width(260.dp)
                     .height(20.dp)
+                    .graphicsLayer { alpha = 1f - openProgress }
                     .background(
                         Brush.radialGradient(
                             colors = listOf(
@@ -463,8 +512,15 @@ private fun ClosedBookScene(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * StoryReader — the open book interior, shown as a PHYSICAL BOOK OBJECT centered
- * on the dark void background. Fixed page curl pivots from the spine (left edge).
+ * StoryReader — the open book interior.
+ *
+ * Page-curl mechanics (V6):
+ * To simulate turning a physical book page, we must:
+ * 1. Cancel the pager's automatic X translation.
+ * 2. Use `zIndex` so earlier pages (lower index) stack ON TOP of later pages.
+ * 3. Always hinge the rotation on the LEFT EDGE (the spine).
+ * When turning, the active page rotates 0° → -90° and smoothly fades out before
+ * it becomes edge-on, revealing the next page already perfectly flat underneath.
  */
 @Composable
 private fun StoryReader(lore: AscensionLore, rank: Rank, onCloseBook: () -> Unit) {
@@ -478,31 +534,20 @@ private fun StoryReader(lore: AscensionLore, rank: Rank, onCloseBook: () -> Unit
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
 
             // ── THE OPEN BOOK ─────────────────────────────────────────────────
+            // Matches ClosedBookScene dimensions perfectly: 300dp x 300dp.
             Row(
                 modifier = Modifier
                     .shadow(elevation = 24.dp, shape = RoundedCornerShape(10.dp))
                     .height(300.dp)
-                    // Widened slightly (300dp) to fit the new left cover anchor
                     .width(300.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // ── NEW: LEFT SIDE ANCHOR ─────────────────────────────────────
-                // This fixes the "vanishing cover" issue. It gives the book a
-                // physical left side so the spatial logic holds up when turning pages.
-                Box(
-                    modifier = Modifier
-                        .width(16.dp)
-                        .fillMaxHeight()
-                        .clip(RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp))
-                        .background(Color(0xFF121212))
-                )
-
                 // ── OPEN SPINE ────────────────────────────────────────────────
                 Box(
                     modifier = Modifier
                         .width(18.dp)
                         .fillMaxHeight()
-                        // Removed the clip here since it's no longer the absolute left edge
+                        .clip(RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp))
                         .background(
                             Brush.horizontalGradient(
                                 colors = listOf(Color(0xFF020202), Color(0xFF2A2218))
@@ -521,27 +566,32 @@ private fun StoryReader(lore: AscensionLore, rank: Rank, onCloseBook: () -> Unit
                         state = pagerState,
                         modifier = Modifier.fillMaxSize()
                     ) { pageIndex ->
+
                         val pageOffset = (pageIndex - pagerState.currentPage).toFloat() -
                                 pagerState.currentPageOffsetFraction
-                        val absOffset = abs(pageOffset)
 
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                // CRITICAL FIX 1: The page currently turning must draw ON TOP
-                                .zIndex(if (pageOffset <= 0f) 1f - absOffset else 0f)
+                                // CRITICAL: Stacks pages so Page 0 is on top of Page 1, etc.
+                                .zIndex((totalPages - pageIndex).toFloat())
                                 .graphicsLayer {
+                                    // Cancel horizontal sliding drag
                                     translationX = -pageOffset * size.width
 
-                                    // CRITICAL FIX 2: ALWAYS pivot at the left edge (the spine)
+                                    // ALL pages hinge on the left (the spine)
                                     transformOrigin = TransformOrigin(0f, 0.5f)
 
                                     if (pageOffset <= 0f) {
-                                        // Leaving page: lifts from right, flips left over the spine
-                                        rotationY = pageOffset * 90f // Swings 0 to -90 degrees
-                                        alpha = 1f - (absOffset * 0.35f).coerceIn(0f, 1f)
+                                        // The active page or leaving page. Swings left (0 to -90).
+                                        val rotY = pageOffset * 90f
+                                        rotationY = rotY
+                                        // Fade it out in the final 15 degrees so it doesn't artifact
+                                        // when it becomes perfectly edge-on.
+                                        alpha = if (rotY < -75f) (90f + rotY) / 15f else 1f
                                     } else {
-                                        // Incoming page: sits flat underneath, waiting to be revealed
+                                        // Incoming page from the right sits perfectly flat waiting
+                                        // to be revealed as the top page turns.
                                         rotationY = 0f
                                         alpha = 1f
                                     }
