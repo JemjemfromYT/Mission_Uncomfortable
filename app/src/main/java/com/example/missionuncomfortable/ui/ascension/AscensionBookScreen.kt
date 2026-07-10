@@ -82,10 +82,24 @@
  *        page 2 → illustration at the bottom, end-aligned
  *        page 3 → illustration at the top, start-aligned (left)
  *      Added import kotlin.math.cos (sin was already imported).
+ * v9 — Added AscensionAudioState + rememberAscensionAudio: full audio system
+ *      using MediaPlayer (looping BGM) and SoundPool (low-latency SFX).
+ *      5 rank-specific BGM loops + 5 sound effects — see AUDIO SYSTEM section
+ *      for the full file list. All audio degrades gracefully if files are absent.
+ *      BGM starts immediately on screen entry; fades/stops on CLOSING.
+ *      SFX triggers: book tap, book open, flash shimmer, page turn, book close.
+ * v10 — Corrected BGM design. The 5 rank-specific BGM loops (bgm_observer, etc.)
+ *      belong on the MAIN SCREEN, not here. The book screen now uses a single
+ *      dedicated track: bgm_book.mp3. rememberAscensionAudio no longer accepts
+ *      rankLevel; it always loads bgm_book regardless of rank.
  */
 
 package com.example.missionuncomfortable.ui.ascension
 
+import android.content.Context
+import android.media.AudioAttributes
+import android.media.MediaPlayer
+import android.media.SoundPool
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -114,8 +128,10 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -132,6 +148,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -177,6 +194,157 @@ private enum class BookStage {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// AUDIO SYSTEM
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * SfxEvent — all discrete sound effects that can fire during the book experience.
+ *
+ * Files must be placed in app/src/main/res/raw/ with exactly these names
+ * (Android lowercases them automatically):
+ *   sfx_ui_click.mp3   — instant tap feedback on every interactive element
+ *   sfx_book_tap.mp3   — the user taps the closed book cover (follows sfx_ui_click)
+ *   sfx_book_open.mp3  — the cover-swing animation starts
+ *   sfx_flash.mp3      — the radiant light flash at the opening midpoint
+ *   sfx_page_turn.mp3  — each page swipe completes
+ *   sfx_book_close.mp3 — the book-close thud (follows sfx_ui_click on the button)
+ */
+private enum class SfxEvent {
+    UI_CLICK,   // instant tap response — fires first on every button/tap
+    BOOK_TAP,
+    BOOK_OPEN,
+    FLASH,
+    PAGE_TURN,
+    BOOK_CLOSE
+}
+
+/**
+ * AscensionAudioState — wraps a looping MediaPlayer (BGM) and a SoundPool
+ * (low-latency SFX) for the duration of one AscensionBookScreen session.
+ *
+ * BGM (one file, shared across all ranks, placed in res/raw/):
+ *   bgm_book.mp3  — the book-reading atmosphere loop
+ *
+ * The 5 rank-specific tracks (bgm_observer, bgm_initiate, etc.) are for the
+ * MAIN SCREEN, not this screen.
+ *
+ * If any audio file is missing at runtime the corresponding play call is
+ * silently skipped — the experience degrades gracefully with no crash.
+ */
+private class AscensionAudioState(
+    private val bgmPlayer: MediaPlayer?,
+    private val pool: SoundPool,
+    private val soundIds: Map<SfxEvent, Int>
+) {
+    /** Start (or resume) the looping BGM. Safe to call multiple times. */
+    fun startBgm() {
+        bgmPlayer?.let { if (!it.isPlaying) it.start() }
+    }
+
+    /** Pause the BGM. */
+    fun stopBgm() { runCatching { bgmPlayer?.pause() } }
+
+    /** Play a one-shot SFX. Silently skips if the sound file was absent. */
+    fun playSfx(event: SfxEvent) {
+        val id = soundIds[event] ?: return
+        if (id != 0) pool.play(id, /*leftVol*/ 1f, /*rightVol*/ 1f, /*priority*/ 1, /*loop*/ 0, /*rate*/ 1f)
+    }
+
+    /** Release all native audio resources. Must be called exactly once, on disposal. */
+    fun release() {
+        bgmPlayer?.release()
+        pool.release()
+    }
+}
+
+/**
+ * The single BGM track used throughout the entire book experience.
+ * Rank-specific ambient loops (bgm_observer, bgm_initiate, etc.) live on the
+ * main screen — not here.
+ */
+private const val BGM_BOOK_FILE = "bgm_book"
+
+/** Maps each SfxEvent to its res/raw/ file name. */
+private val sfxFileNames = mapOf(
+    SfxEvent.UI_CLICK   to "sfx_ui_click",
+    SfxEvent.BOOK_TAP   to "sfx_book_tap",
+    SfxEvent.BOOK_OPEN  to "sfx_book_open",
+    SfxEvent.FLASH      to "sfx_flash",
+    SfxEvent.PAGE_TURN  to "sfx_page_turn",
+    SfxEvent.BOOK_CLOSE to "sfx_book_close"
+)
+
+/**
+ * rememberAscensionAudio — creates, remembers, and auto-releases an
+ * AscensionAudioState tied to the current composition lifecycle.
+ *
+ * - MediaPlayer: created synchronously (prepare() is called on the calling
+ *   thread, which is fine for compressed audio in res/raw).
+ * - SoundPool: sounds are loaded in the background; any SFX played before its
+ *   load completes is silently skipped (SoundPool's default behaviour).
+ *
+ * @param context  Android context, used only for resource loading.
+ */
+@Composable
+private fun rememberAscensionAudio(context: Context): AscensionAudioState {
+
+    val audioState = remember {
+
+        // ── BGM: MediaPlayer — single looping book atmosphere track ───────────
+        // bgm_book.mp3 is the ONLY BGM used inside the book screen.
+        // The 5 rank-specific tracks (bgm_observer, etc.) belong on the main screen.
+        val bgmResId = context.resources.getIdentifier(BGM_BOOK_FILE, "raw", context.packageName)
+
+        val bgmPlayer: MediaPlayer? = if (bgmResId != 0) {
+            runCatching {
+                MediaPlayer().apply {
+                    val afd = context.resources.openRawResourceFd(bgmResId)
+                    setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+                    afd.close()
+                    setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_GAME)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                            .build()
+                    )
+                    isLooping = true
+                    setVolume(0.50f, 0.50f) // 50% — atmospheric, not overpowering
+                    // prepare() is synchronous and fine for local res/raw files
+                    // (no network I/O — just reads a file descriptor).
+                    prepare()
+                }
+            }.getOrNull()
+        } else null // File not in res/raw yet — degrade gracefully
+
+        // ── SFX: SoundPool — low-latency one-shot effects ────────────────────
+        val sfxAttributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_GAME)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+
+        val pool = SoundPool.Builder()
+            .setMaxStreams(4) // up to 4 sounds overlapping at once
+            .setAudioAttributes(sfxAttributes)
+            .build()
+
+        // Load each SFX; missing files get id=0 and are skipped at play time.
+        val soundIds: Map<SfxEvent, Int> = sfxFileNames.mapValues { (_, name) ->
+            val resId = context.resources.getIdentifier(name, "raw", context.packageName)
+            if (resId != 0) pool.load(context, resId, 1) else 0
+        }
+
+        AscensionAudioState(bgmPlayer, pool, soundIds)
+    }
+
+    // Release all native resources when this composable leaves the tree.
+    DisposableEffect(Unit) {
+        onDispose { audioState.release() }
+    }
+
+    return audioState
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ROOT COMPOSABLE
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -188,22 +356,33 @@ private enum class BookStage {
  */
 @Composable
 fun AscensionBookScreen(rank: Rank, onFinish: () -> Unit) {
-    val lore = remember(rank.level) { getLoreForRank(rank.level) }
+    val lore    = remember(rank.level) { getLoreForRank(rank.level) }
+    val context = LocalContext.current
 
     var stage by remember { mutableStateOf(BookStage.CLOSED) }
+
+    // ── AUDIO ─────────────────────────────────────────────────────────────────
+    // Initialised once per rank; released automatically when this composable
+    // leaves the tree (via DisposableEffect inside rememberAscensionAudio).
+    val audio = rememberAscensionAudio(context)
+
+    // Start BGM as soon as the screen appears.
+    LaunchedEffect(Unit) { audio.startBgm() }
+
+    // Stop BGM on close; the existing 600ms delay still fires onFinish.
+    LaunchedEffect(stage) {
+        if (stage == BookStage.CLOSING) {
+            audio.stopBgm()
+            delay(600)
+            onFinish()
+        }
+    }
 
     val screenAlpha by animateFloatAsState(
         targetValue = if (stage == BookStage.CLOSING) 0f else 1f,
         animationSpec = tween(durationMillis = 550),
         label = "AscensionScreenFade"
     )
-
-    LaunchedEffect(stage) {
-        if (stage == BookStage.CLOSING) {
-            delay(600)
-            onFinish()
-        }
-    }
 
     Box(
         modifier = Modifier
@@ -225,14 +404,27 @@ fun AscensionBookScreen(rank: Rank, onFinish: () -> Unit) {
                     rank = rank, // Passed so the underlying TitlePage can render
                     isOpening = stage == BookStage.OPENING,
                     onOpenAnimationComplete = { stage = BookStage.READING },
-                    onTap = { if (stage == BookStage.CLOSED) stage = BookStage.OPENING }
+                    onTap = {
+                        if (stage == BookStage.CLOSED) {
+                            audio.playSfx(SfxEvent.UI_CLICK)  // instant button feedback
+                            audio.playSfx(SfxEvent.BOOK_TAP)  // tap thud
+                            audio.playSfx(SfxEvent.BOOK_OPEN) // cover-swing creak
+                            stage = BookStage.OPENING
+                        }
+                    },
+                    // Flash shimmer plays at the animation midpoint (triggered inside ClosedBookScene).
+                    onFlashSound = { audio.playSfx(SfxEvent.FLASH) }
                 )
             }
             BookStage.READING -> {
                 StoryReader(
                     lore = lore,
                     rank = rank,
-                    onCloseBook = { stage = BookStage.CLOSING }
+                    onCloseBook = { stage = BookStage.CLOSING },
+                    // Page-turn paper rustle — fired on every page change.
+                    onPageTurn = { audio.playSfx(SfxEvent.PAGE_TURN) },
+                    // Book-close thud — fired when the user taps "CLOSE THE BOOK".
+                    onCloseSfx = { audio.playSfx(SfxEvent.BOOK_CLOSE) }
                 )
             }
             BookStage.CLOSING -> {
@@ -308,7 +500,8 @@ private fun ClosedBookScene(
     rank: Rank,
     isOpening: Boolean,
     onOpenAnimationComplete: () -> Unit,
-    onTap: () -> Unit
+    onTap: () -> Unit,
+    onFlashSound: () -> Unit  // fires the shimmer SFX at the animation midpoint
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "ClosedBookGlow")
     val breathingAlpha by infiniteTransition.animateFloat(
@@ -319,6 +512,14 @@ private fun ClosedBookScene(
         ),
         label = "ClosedBookGlowAlpha"
     )
+
+    // Play the flash shimmer SFX ~500ms into the 1000ms open swing (visual midpoint).
+    LaunchedEffect(isOpening) {
+        if (isOpening) {
+            delay(500)
+            onFlashSound()
+        }
+    }
 
     // rotationY 0 → -90: ONLY the cover swings open on its left hinge.
     val openRotation by animateFloatAsState(
@@ -534,9 +735,25 @@ private fun ClosedBookScene(
  * it becomes edge-on, revealing the next page already perfectly flat underneath.
  */
 @Composable
-private fun StoryReader(lore: AscensionLore, rank: Rank, onCloseBook: () -> Unit) {
+private fun StoryReader(
+    lore: AscensionLore,
+    rank: Rank,
+    onCloseBook: () -> Unit,
+    onPageTurn: () -> Unit,  // fires sfx_page_turn on every page change
+    onCloseSfx: () -> Unit   // fires sfx_book_close when user taps "CLOSE THE BOOK"
+) {
     val totalPages = lore.pages.size + 2
     val pagerState = rememberPagerState(pageCount = { totalPages })
+
+    // Track the previous page to avoid firing the SFX on the initial render
+    // (currentPage starts at 0; only fire when the user actually swipes).
+    var prevPage by remember { mutableIntStateOf(0) }
+    LaunchedEffect(pagerState.currentPage) {
+        if (pagerState.currentPage != prevPage) {
+            onPageTurn()
+            prevPage = pagerState.currentPage
+        }
+    }
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -620,7 +837,11 @@ private fun StoryReader(lore: AscensionLore, rank: Rank, onCloseBook: () -> Unit
                             ) {
                                 when (pageIndex) {
                                     0            -> TitlePage(lore = lore, rank = rank)
-                                    totalPages-1 -> ClosingPage(lore = lore, onCloseBook = onCloseBook)
+                                    totalPages-1 -> ClosingPage(
+                                        lore         = lore,
+                                        onCloseBook  = onCloseBook,
+                                        onCloseSound = onCloseSfx
+                                    )
                                     else         -> StoryPage(
                                         lore       = lore,
                                         paragraph  = lore.pages[pageIndex - 1],
@@ -815,11 +1036,16 @@ private fun StoryPage(
 /**
  * ClosingPage — closing line, ornamental divider, and "CLOSE THE BOOK" button.
  *
- * @param lore         Rank theme.
- * @param onCloseBook  Called when the button is tapped.
+ * @param lore          Rank theme.
+ * @param onCloseBook   Called when the button is tapped (triggers screen close).
+ * @param onCloseSound  Plays sfx_book_close before the screen fades out.
  */
 @Composable
-private fun ClosingPage(lore: AscensionLore, onCloseBook: () -> Unit) {
+private fun ClosingPage(
+    lore: AscensionLore,
+    onCloseBook: () -> Unit,
+    onCloseSound: () -> Unit
+) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(text = lore.theme.sigil, fontSize = 32.sp, color = lore.theme.hotColor)
         Spacer(modifier = Modifier.height(16.dp))
@@ -835,13 +1061,17 @@ private fun ClosingPage(lore: AscensionLore, onCloseBook: () -> Unit) {
         OrnamentalDivider(color = lore.theme.accentColor)
         Spacer(modifier = Modifier.height(20.dp))
         // CLOSE THE BOOK button — rank's accent colour, last thing the user sees.
+        // Plays the book-close SFX then immediately triggers the screen fade.
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(8.dp))
                 .background(lore.theme.accentColor)
-                .clickable(onClick = onCloseBook)
+                .clickable {
+                    onCloseSound()  // sfx_ui_click + sfx_book_close (fired inside AscensionBookScreen)
+                    onCloseBook()
+                }
                 .padding(vertical = 10.dp)
         ) {
             Text(
