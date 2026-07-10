@@ -129,6 +129,22 @@
  *            Challenger(3): 0.12-0.32 → 0.45-0.80 breathing pulse.
  *            Conqueror (4): 0.24-0.54 → 0.65-0.95 pulsing glow.
  *            Sovereign (5): 0.38-0.76 → 0.80-1.00 rapid shimmer.
+ *
+ *   v4 — PRESTIGE TIER SYSTEM (shared with DashboardScreen):
+ *          Problem: even after the v3 ring fix, every rank still got the SAME visual
+ *          treatment — one ring, just brighter/wider per rank. Sovereign looked like
+ *          "Initiate but brighter," not like the apex rank it's meant to represent.
+ *          Fix: the glow is now drawn by the shared RankBadgeGlow composable (see
+ *          ui/dashboard/RankBadgeGlow.kt), which escalates genuinely per rank:
+ *            Initiate  (2): single soft static ring.
+ *            Challenger(3): dual-layer ring, breathing pulse.
+ *            Conqueror (4): dual-layer ring in a hotter gold + a rotating shimmer sweep.
+ *            Sovereign (5): triple-layer molten ring + twin shimmer sweep + 8 rotating
+ *                           radiant light rays + a slow "living" breathing scale on the
+ *                           whole badge+glow unit.
+ *          All local glow-animation code (alpha tuples, infiniteTransition, radialGradient
+ *          drawBehind) was removed from this file — RankUpScreen now just calls
+ *          RankBadgeGlow(rank = newRank, badgeSize = 160.dp, modifier = spring-scale) { Image(...) }.
  */
 
 package com.example.missionuncomfortable.ui.rankup
@@ -145,8 +161,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind                          // v2: draws the radial glow behind the badge container
-import androidx.compose.ui.graphics.Brush                          // v2: Brush.radialGradient shapes the glow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -156,6 +170,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.missionuncomfortable.ui.dashboard.Rank
+import com.example.missionuncomfortable.ui.dashboard.RankBadgeGlow   // v4: shared prestige-tier glow composable
 
 // ─── COLOUR CONSTANTS ────────────────────────────────────────────────────────
 
@@ -183,6 +198,11 @@ private val ColorAccentGold    = Color(0xFFC8A84B)   // Muted gold — CONTINUE 
  * v3: Glow switched from a filled centre→transparent gradient to a RING gradient
  *     (colorStops) that peaks just outside the badge's edge instead of at its centre,
  *     which the badge image was hiding. See file header CHANGELOG v3 for details.
+ * v4: Glow drawing (and its container sizing) moved into the shared RankBadgeGlow
+ *     composable (see ui/dashboard/RankBadgeGlow.kt) — this screen no longer draws
+ *     the glow itself. badgeScale is still applied here, passed into RankBadgeGlow's
+ *     `modifier` param so the spring entrance still animates badge + glow as one unit.
+ *     See file header CHANGELOG v4 for the full per-rank prestige-tier breakdown.
  *
  * @param newRank    The rank the user just achieved. Used for badge image,
  *                   title text, and description text.
@@ -243,52 +263,10 @@ fun RankUpScreen(
         label          = "ButtonOffset"
     )
 
-    // ── v2: RANK-SPECIFIC GLOW ANIMATION ──────────────────────────────────────
-    // Each rank's celebration screen gets a different glow intensity.
-    // The glow scales more dramatic with each rank — Sovereign's screen looks
-    // nothing like Initiate's. This is the only per-rank visual difference
-    // on this screen. Layout, text, and button are identical across ranks.
-    //
-    // Per-rank parameters — Triple(minAlpha, maxAlpha, halfCycleDurationMs):
-    //   Initiate  (2): faint static halo — first sign something was earned.
-    //   Challenger(3): slow breathing pulse — discomfort is building.
-    //   Conqueror (4): strong pulsing glow — intensity is unmistakable.
-    //   Sovereign (5): rapid shimmer — the most earned, the most alive.
-    //
-    // Why these specific durations?
-    //   2200ms → slow and meditative, like a deep breath.
-    //   1600ms → noticeable rhythm, clearly pulsing.
-    //   1100ms → fast enough to feel electric, not frantic.
-    //
-    // v3 WHY these (higher) alpha values: the ring gradient below (see drawBehind)
-    // concentrates all the gold at the badge's edge instead of hiding it under the badge,
-    // so these values map directly to visible brightness. This screen's intensities run
-    // higher than the dashboard equivalents — this is the payoff moment.
-    val (glowAlphaMin, glowAlphaMax, glowDurationMs) = when (newRank.level) {
-        2    -> Triple(0.50f, 0.50f, 3000)   // Initiate:    clearly visible static halo
-        3    -> Triple(0.45f, 0.80f, 2200)   // Challenger:  slow breathing pulse
-        4    -> Triple(0.65f, 0.95f, 1600)   // Conqueror:   strong pulsing glow
-        else -> Triple(0.80f, 1.00f, 1100)   // Sovereign:   rapid full shimmer — the apex
-    }
-
-    val infiniteGlowTransition = rememberInfiniteTransition(label = "RankUpGlow")
-
-    val animatedGlowAlpha by infiniteGlowTransition.animateFloat(
-        initialValue  = glowAlphaMin,
-        targetValue   = glowAlphaMax,
-        animationSpec = infiniteRepeatable(
-            // FastOutSlowInEasing gives the pulse a natural deceleration at each peak —
-            // more organic than a linear oscillation, closer to a real heartbeat.
-            animation  = tween(durationMillis = glowDurationMs, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse   // Animate forward then backward — a smooth breath
-        ),
-        label = "RankUpGlowAlpha"
-    )
-
-    // Level 2 (Initiate) is static — min == max, the animateFloat produces a constant.
-    // Levels 3-5 pulse continuously. The pulse begins as soon as the screen appears,
-    // and the spring scale brings the whole glowing container into view together.
-    val effectiveGlowAlpha = if (newRank.level >= 3) animatedGlowAlpha else glowAlphaMin
+    // v4: per-rank glow animation moved to the shared RankBadgeGlow composable
+    // (see ui/dashboard/RankBadgeGlow.kt) — it now drives its own alpha/rotation/
+    // breathing animations internally based on rank.level, so this screen no
+    // longer needs its own glow alpha tuples or infiniteTransition.
 
     // ── START ANIMATIONS ──────────────────────────────────────────────────────
     // LaunchedEffect(Unit) runs once on first composition.
@@ -323,49 +301,29 @@ fun RankUpScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // ── RANK BADGE — animated scale-in + rank-specific glow ───────────
+            // ── RANK BADGE — animated scale-in + rank-specific prestige glow ──
             // v1: Badge springs from scale 0 → 1. The emotional centrepiece of the screen.
             // v2: The 200dp container Box now wraps both the glow and the badge image.
             //     graphicsLayer (spring scale) is on the container — the glow and badge
             //     scale in as one unit, landing with the same physical weight.
-            //     The glow pulses via infiniteGlowTransition independently of the spring:
-            //       - While badgeScale is animating (0→1), the glow is already pulsing.
-            //       - The two animations are independent and compose naturally.
+            // v4: Glow drawing now lives in the shared RankBadgeGlow composable (see
+            //     ui/dashboard/RankBadgeGlow.kt). The spring-scale graphicsLayer below is
+            //     passed in via `modifier` and composes with RankBadgeGlow's own container
+            //     sizing (which now scales per-rank tier) and internal breathing scale
+            //     (Sovereign only) — both apply to the same Box multiplicatively.
             //
             // checkNotNull() will crash loudly in testing if a rank has no badgeResId,
             // ensuring a missing drawable is caught immediately during development.
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier         = Modifier
-                    .size(200.dp)
-                    .graphicsLayer {
-                        // Spring-animated scale applied to the full container.
-                        // Both the glow (drawn by drawBehind) and the badge image (inside)
-                        // scale together — they arrive on screen as a single object.
-                        scaleX = badgeScale
-                        scaleY = badgeScale
-                    }
-                    .drawBehind {
-                        // v3 RING gradient, not a filled circle — same fix as the dashboard
-                        // badge: a centre→transparent fade hides its brightest point under
-                        // the badge image, leaving only a faint rim visible. Instead the
-                        // glow peaks just OUTSIDE the badge's edge, where it can be seen.
-                        //
-                        // Container is 200dp (radius 100dp), badge is 160dp (radius 80dp),
-                        // so the badge edge sits at colorStop 0.80. The ring peaks at 0.82,
-                        // just past the badge, and fades to transparent by the container edge.
-                        drawCircle(
-                            brush = Brush.radialGradient(
-                                colorStops = arrayOf(
-                                    0.00f to Color.Transparent,
-                                    0.68f to Color.Transparent,
-                                    0.82f to ColorAccentGold.copy(alpha = effectiveGlowAlpha),
-                                    1.00f to Color.Transparent
-                                ),
-                                radius = size.minDimension / 2f
-                            )
-                        )
-                    }
+            RankBadgeGlow(
+                rank = newRank,
+                badgeSize = 160.dp,
+                modifier = Modifier.graphicsLayer {
+                    // Spring-animated scale applied to the full container.
+                    // Both the glow (drawn inside RankBadgeGlow) and the badge image (inside)
+                    // scale together — they arrive on screen as a single object.
+                    scaleX = badgeScale
+                    scaleY = badgeScale
+                }
             ) {
                 Image(
                     painter            = painterResource(
@@ -377,7 +335,7 @@ fun RankUpScreen(
                     contentDescription = "New rank badge: ${newRank.title}",
                     contentScale       = ContentScale.Fit,
                     modifier           = Modifier
-                        .size(160.dp)      // 160dp — same as v1. Container is 200dp to allow glow halo.
+                        .size(160.dp)      // 160dp — same as v1. RankBadgeGlow sizes its own container around this.
                         .clip(CircleShape) // Circular clip — matches the badge drawables' circular design
                 )
             }

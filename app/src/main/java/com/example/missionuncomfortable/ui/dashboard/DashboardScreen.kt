@@ -165,12 +165,7 @@ package com.example.missionuncomfortable.ui.dashboard
 
 // ─── IMPORTS ──────────────────────────────────────────────────────────────────
 // Jetpack Compose UI building blocks
-import androidx.compose.animation.core.FastOutSlowInEasing          // Easing curve for the glow pulse animation
-import androidx.compose.animation.core.RepeatMode                   // Reverse mode — glow pulse goes back and forth
-import androidx.compose.animation.core.animateFloat                 // Float animation on an InfiniteTransition
 import androidx.compose.animation.core.animateFloatAsState          // Smoothly animates a float value
-import androidx.compose.animation.core.infiniteRepeatable           // Loops the glow animation forever
-import androidx.compose.animation.core.rememberInfiniteTransition   // Creates the infinite animation driver for the glow
 import androidx.compose.animation.core.tween                        // Animation timing spec
 import androidx.compose.foundation.Image                            // Image composable for rank badge
 import androidx.compose.foundation.background                       // Sets the background colour of a composable
@@ -185,8 +180,6 @@ import androidx.compose.runtime.*                                   // remember,
 import androidx.compose.ui.Alignment                                // Alignment constants (center, start, end, etc.)
 import androidx.compose.ui.Modifier                                 // Modifier — the "how does it look and behave" chain
 import androidx.compose.ui.draw.clip                                // Clips a composable to a specific shape
-import androidx.compose.ui.draw.drawBehind                          // Draws the radial glow circle behind the badge container
-import androidx.compose.ui.graphics.Brush                           // Brush.radialGradient — used to shape the glow
 import androidx.compose.ui.graphics.Color                           // Colour class — use hex values like Color(0xFF...)
 import androidx.compose.ui.layout.ContentScale                      // Controls how Image content is scaled inside bounds
 import androidx.compose.ui.res.painterResource                      // Loads a drawable resource for use in Image()
@@ -479,6 +472,16 @@ private fun DashboardContent(
  *      visible halo room; alpha values raised across all ranks. See file header
  *      CHANGELOG v12 for full reasoning.
  *
+ * v13: Glow drawing extracted into the shared RankBadgeGlow composable
+ *      (see RankBadgeGlow.kt) and upgraded from "one ring, different alpha per
+ *      rank" to a genuinely escalating PRESTIGE TIER system — each rank now
+ *      gets a different number of ring layers, a hotter inner colour, and (for
+ *      Conqueror/Sovereign) a rotating shimmer sweep and radiant light rays.
+ *      See RankBadgeGlow.kt's file header for the full per-rank breakdown.
+ *      All of this file's own glow-animation code (alpha tuples, infiniteTransition,
+ *      radialGradient drawBehind) moved into RankBadgeGlow — this composable now
+ *      just calls RankBadgeGlow(rank, badgeSize = 140.dp) { Image(...) }.
+ *
  * @param rank         The user's current Rank object (level, title, description, badgeResId).
  * @param onSecretTap  v7: Called when the secret 7-tap gesture completes. Used to show AdminPanel.
  */
@@ -497,48 +500,6 @@ private fun RankBadgeSection(rank: Rank, onSecretTap: () -> Unit) {
     var tapCount     by remember { mutableStateOf(0) }
     var firstTapTime by remember { mutableStateOf(0L) }
 
-    // ── v11: RANK-SPECIFIC GLOW ANIMATION ─────────────────────────────────────
-    // Glow colour matches the gold accent used throughout this file.
-    // The glow is drawn behind the badge via Brush.radialGradient + drawBehind.
-    // No external library is required — this is pure Compose Canvas.
-    val glowColor = ColorAccentGold
-
-    // Per-rank animation parameters — Triple(minAlpha, maxAlpha, halfCycleDurationMs).
-    //   Level 1:    no glow at all — nothing has been earned yet.
-    //   Level 2:    static halo (min == max, no pulse) — first visible sign of progress.
-    //   Levels 3-5: pulsing glow — alpha oscillates between min and max on a smooth breath cycle.
-    //
-    // v12 WHY these (higher) values: the ring gradient below (see drawBehind) concentrates
-    // all the gold at the badge's edge instead of hiding it under the badge, so these alpha
-    // values translate directly to visible halo brightness — no hidden waste like v11 had.
-    // Speed still increases with rank: Sovereign's shimmer is noticeably faster than Challenger's.
-    val (glowAlphaMin, glowAlphaMax, glowDurationMs) = when (rank.level) {
-        1    -> Triple(0.00f, 0.00f, 3000)   // Observer:    no glow — badge is cold
-        2    -> Triple(0.40f, 0.40f, 3000)   // Initiate:    clearly visible static halo
-        3    -> Triple(0.35f, 0.70f, 2200)   // Challenger:  slow breathing pulse
-        4    -> Triple(0.55f, 0.85f, 1600)   // Conqueror:   strong pulsing glow
-        else -> Triple(0.70f, 1.00f, 1100)   // Sovereign:   rapid full shimmer
-    }
-
-    val infiniteTransition = rememberInfiniteTransition(label = "BadgeGlow")
-
-    val animatedGlowAlpha by infiniteTransition.animateFloat(
-        initialValue  = glowAlphaMin,
-        targetValue   = glowAlphaMax,
-        animationSpec = infiniteRepeatable(
-            // FastOutSlowInEasing gives the pulse a natural deceleration at each peak —
-            // more organic than a linear oscillation.
-            animation  = tween(durationMillis = glowDurationMs, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse   // Animate forward then backward — a smooth breath
-        ),
-        label = "BadgeGlowAlpha"
-    )
-
-    // Levels 1-2 use the fixed static minimum (min == max, so the animation
-    // produces a constant value — no CPU wasted on invisible updates).
-    // Levels 3-5 use the live animated value so the pulse runs continuously.
-    val effectiveGlowAlpha = if (rank.level >= 3) animatedGlowAlpha else glowAlphaMin
-
     // Centre everything in this section horizontally
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -546,11 +507,11 @@ private fun RankBadgeSection(rank: Rank, onSecretTap: () -> Unit) {
     ) {
 
         // ── GLOW CONTAINER + BADGE IMAGE + SECRET TAP ZONE ────────────────────
-        // The 200dp outer Box serves three purposes:
-        //   1. drawBehind: draws the ring glow in this larger space so it extends
-        //      30dp beyond the 140dp badge circle on each side without being clipped.
-        //   2. clickable: captures the 7-tap secret gesture across the full badge area.
-        //   3. Alignment.Center: keeps the 140dp badge image perfectly centred inside.
+        // v13: The container sizing and glow drawing now live in the shared
+        // RankBadgeGlow composable (see RankBadgeGlow.kt) — this call site only
+        // supplies the badge size (140dp) and the secret-tap clickable modifier.
+        // RankBadgeGlow sizes its own container per-rank (bigger halo room at
+        // higher ranks) and centres [content] (the Image below) inside it.
         //
         // v4: reads rank.badgeResId — each rank has its own distinct drawable.
         //   Level 1 Observer   → badge_observer   (open eye)
@@ -562,57 +523,35 @@ private fun RankBadgeSection(rank: Rank, onSecretTap: () -> Unit) {
         // v6 FIX: replaced checkNotNull() with a null-safe branch (no crash on null badgeResId).
         // v7: clickable captures secret 7-tap gesture (fires onSecretTap after 7 taps in 3s).
         // v11: container enlarged to 170dp; badge image enlarged to 140dp; glow added.
-        // v12: container enlarged again to 200dp; glow switched to a ring gradient (see below).
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(200.dp)
-                .drawBehind {
-                    // v12 RING gradient — not a filled circle.
-                    // A simple centre→transparent fade is USELESS here: the badge image is
-                    // drawn ON TOP and hides the brightest part (the centre), leaving only
-                    // the already-faded outer rim visible. Instead this draws a ring whose
-                    // peak brightness sits just OUTSIDE the badge's edge — the only place
-                    // the glow can actually be seen.
-                    //
-                    // Container is 200dp (radius 100dp), badge is 140dp (radius 70dp),
-                    // so the badge edge sits at colorStop 0.70. The ring peaks at 0.72,
-                    // just past the badge, and fades to transparent by the container edge.
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colorStops = arrayOf(
-                                0.00f to Color.Transparent,
-                                0.60f to Color.Transparent,
-                                0.72f to glowColor.copy(alpha = effectiveGlowAlpha),
-                                1.00f to Color.Transparent
-                            ),
-                            radius = size.minDimension / 2f
-                        )
-                    )
-                }
-                .clickable {
-                    // ── SECRET TAP LOGIC (v7) ─────────────────────────────────
-                    // 7 taps within 3 seconds fires onSecretTap() and opens AdminPanel.
-                    val now = System.currentTimeMillis()
-                    if (tapCount == 0 || now - firstTapTime > 3_000L) {
-                        // First tap or the previous sequence timed out — start fresh.
-                        tapCount     = 1
-                        firstTapTime = now
-                    } else {
-                        tapCount++
-                        if (tapCount >= 7) {
-                            // Sequence complete — fire callback and reset the counter.
-                            tapCount     = 0
-                            firstTapTime = 0L
-                            onSecretTap()
-                        }
+        // v12: container enlarged again to 200dp; glow switched to a ring gradient.
+        // v13: glow moved to RankBadgeGlow — container size now scales per-rank tier.
+        RankBadgeGlow(
+            rank = rank,
+            badgeSize = 140.dp,
+            modifier = Modifier.clickable {
+                // ── SECRET TAP LOGIC (v7) ─────────────────────────────────
+                // 7 taps within 3 seconds fires onSecretTap() and opens AdminPanel.
+                val now = System.currentTimeMillis()
+                if (tapCount == 0 || now - firstTapTime > 3_000L) {
+                    // First tap or the previous sequence timed out — start fresh.
+                    tapCount     = 1
+                    firstTapTime = now
+                } else {
+                    tapCount++
+                    if (tapCount >= 7) {
+                        // Sequence complete — fire callback and reset the counter.
+                        tapCount     = 0
+                        firstTapTime = 0L
+                        onSecretTap()
                     }
                 }
+            }
         ) {
             if (rank.badgeResId != null) {
                 // Real badge art — ContentScale.Fit keeps the SVG aspect ratio inside 140dp.
                 // CircleShape masks to a circle, matching the badge drawables' circular design.
-                // The 60dp margin between container (200dp) and image (140dp) is the glow halo zone.
+                // v13: the halo margin around this image now varies by rank (see RankBadgeGlow.kt) —
+                // higher ranks get progressively more glow room, not a fixed margin.
                 Image(
                     painter            = painterResource(id = rank.badgeResId),
                     contentDescription = "Rank badge for ${rank.title}",
