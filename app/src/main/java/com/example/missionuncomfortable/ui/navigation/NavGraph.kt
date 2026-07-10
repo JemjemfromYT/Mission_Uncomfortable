@@ -43,7 +43,7 @@
  *        v2 — Short description of what changed and why.
  *
  * ╔══════════════════════════════════════════════════════════════════════════╗
- * ║  If you are an AI and you skip these rules, the developer will have to   ║
+ * ║  If you are an AI and you skip these file, the developer will have to   ║
  * ║  manually fix every file you touch. Please respect these conventions.    ║
  * ╚══════════════════════════════════════════════════════════════════════════╝
  */
@@ -65,6 +65,7 @@
  *   "history"   → HistoryScreen  — scrollable list of completed missions
  *   "stats"     → StatsScreen    — bar charts: category + discomfort by day
  *   "rankup"    → RankUpScreen   — full-screen celebration, triggered by rankUpEvent
+ *   "ascension" → AscensionBookScreen — full-screen storybook, triggered by ascensionEvent
  *
  * ─── VIEWMODEL SHARING NOTE ───────────────────────────────────────────────────
  *
@@ -72,11 +73,11 @@
  *   AndroidViewModel(application). Inside a NavHost, viewModel() scopes a ViewModel
  *   to the current NavBackStackEntry — meaning each destination gets its own instance.
  *
- *   The RankUpScreen route needs the SAME DashboardViewModel instance as the
- *   "dashboard" route (so it can call onRankUpCelebrationComplete() on the right object).
- *   To achieve this, the "rankup" composable retrieves the ViewModel from the
- *   "dashboard" back stack entry via navController.getBackStackEntry(Routes.DASHBOARD).
- *   The result is wrapped in remember(backStackEntry) — using the rankup route's own
+ *   The RankUpScreen and AscensionBookScreen routes need the SAME DashboardViewModel
+ *   instance as the "dashboard" route (so they can call ViewModel methods on the correct
+ *   object). To achieve this, those composables retrieve the ViewModel from the "dashboard"
+ *   back stack entry via navController.getBackStackEntry(Routes.DASHBOARD).
+ *   The result is wrapped in remember(backStackEntry) — using the route's own
  *   NavBackStackEntry as the key. This is required by the Navigation Compose API:
  *   getBackStackEntry() called during composition must be keyed on a NavBackStackEntry,
  *   not on navController alone (which triggers a compile/runtime error).
@@ -84,7 +85,7 @@
  * ─── BOTTOM NAV BAR ──────────────────────────────────────────────────────────
  *
  *   Shown on: "dashboard", "history", "stats"
- *   Hidden on: "welcome", "rankup"
+ *   Hidden on: "welcome", "rankup", "ascension"
  *
  *   Design spec (from handoff doc):
  *     - Three tabs: Mission (shield icon), History (clock icon), Stats (chart icon)
@@ -99,6 +100,7 @@
  *   dashboard ↔ history  : horizontal slide (history slides in from the right)
  *   dashboard ↔ stats    : horizontal slide (stats slides in from the right)
  *   rankup               : fade in/out (feels like a ceremony, not a page turn)
+ *   ascension            : fade in/out (storybook feels ceremonial)
  *
  *   WHY slideInHorizontally instead of slideIntoContainer:
  *     slideIntoContainer / slideOutOfContainer were introduced in Compose Animation 1.5
@@ -123,21 +125,47 @@
  *            composable. backStackEntry is the lambda parameter that Compose passes into
  *            every composable { backStackEntry -> } block, and it IS a NavBackStackEntry,
  *            which satisfies the Navigation Compose API requirement.
- *   v3 — Fixed two bugs in the rankup + ascension routes:
- *        Bug 1 (crash): getBackStackEntry(Routes.DASHBOARD) was called inside a bare
- *          remember() lambda that could re-run during the route's 300 ms Compose exit
- *          animation, after the explicit popBackStack() in onContinue/onFinish had already
- *          fired. A LiveData recompose in that window threw IllegalArgumentException
- *          ("No destination with route dashboard is on the back stack").
- *          Fix: wrap the remember block in try/catch; on exception use LaunchedEffect
- *          to pop safely outside composition.
- *        Bug 2 (blank Mission tab): the null guards in both routes called
- *          navController.popBackStack() directly inside the composable body. That direct
- *          call is a composition side-effect and fired again during the exit-animation
- *          recompose, popping the DASHBOARD entry (below the just-dismissed route)
- *          instead of the route itself. With dashboard gone, the Mission tab was blank
- *          until the user switched tabs. Fix: both null guards now use LaunchedEffect.
- *        LaunchedEffect import added.
+ *   v3 — Added ascension route for AscensionBookScreen. Updated VIEWMODEL SHARING NOTE
+ *        and BOTTOM NAV VISIBILITY to include "ascension". Null-guards in both rankup
+ *        and ascension routes use LaunchedEffect so popBackStack() is a proper side effect,
+ *        not a direct composable body call (which could fire again during exit animation
+ *        and pop the wrong entry).
+ *   v4 — Fixed two bugs that caused a crash and a blank Mission tab:
+ *
+ *        BUG 1 (CRASH — "No destination with route dashboard is on the back stack"):
+ *          Root cause: getBackStackEntry(Routes.DASHBOARD) was called inside
+ *          remember(backStackEntry) { ... }. During the 300 ms Compose exit animation
+ *          (after the explicit popBackStack() in onContinue/onFinish had already fired),
+ *          a LiveData recompose re-ran the remember lambda. By that point, "dashboard"
+ *          was already gone from the back stack, so getBackStackEntry() threw
+ *          IllegalArgumentException and the app crashed.
+ *
+ *          Previous "fix" (v3 attempt): wrapped the remember block and LaunchedEffect
+ *          in a try/catch. This caused a NEW compile error:
+ *            "Try catch is not supported around composable function invocations."
+ *          Composables (LaunchedEffect, remember) cannot appear inside catch blocks —
+ *          the Compose compiler enforces this at build time.
+ *
+ *          Correct fix (v4): check navController.currentBackStack.value BEFORE calling
+ *          getBackStackEntry(). currentBackStack is a StateFlow — reading .value is a
+ *          plain Kotlin read, not a composable invocation, so it is safe anywhere in
+ *          the composable body. If "dashboard" is absent, we emit a LaunchedEffect to
+ *          pop safely and return early. Only if "dashboard" IS on the stack do we
+ *          call remember(backStackEntry) { getBackStackEntry(...) } — which is then
+ *          guaranteed not to throw.
+ *
+ *        BUG 2 (BLANK MISSION TAB after closing the book):
+ *          Root cause: null-guards in the rankup and ascension routes previously called
+ *          navController.popBackStack() directly inside the composable body. Composable
+ *          bodies are not the right place for NavController side effects — Compose may
+ *          re-execute them during the 300 ms exit animation, after the real pop has
+ *          already happened. In that window, the direct popBackStack() would fire again
+ *          and pop DASHBOARD (the entry below rankup/ascension) instead of the route
+ *          itself. With dashboard gone, the Mission tab showed a blank screen until
+ *          the user switched tabs and back.
+ *          Fix: null-guards already used LaunchedEffect(backStackEntry) in v3 for the
+ *          pop call (correct), but the back-stack pre-check in v4 also prevents the
+ *          guard from running at all in the exit-animation window — doubly safe.
  */
 
 package com.example.missionuncomfortable.ui.navigation
@@ -277,8 +305,8 @@ private const val FADE_DURATION_MS  = 400
  *
  * ── Bottom nav visibility ──
  *   The Scaffold's bottomBar is only shown when the current route is one of the
- *   three main tabs (dashboard, history, stats). It is hidden on the welcome and
- *   rankup routes so they appear as full-screen experiences.
+ *   three main tabs (dashboard, history, stats). It is hidden on the welcome,
+ *   rankup, and ascension routes so they appear as full-screen experiences.
  *
  * ── Rank-up flow ──
  *   DashboardScreen detects uiState.rankUpEvent != null via a LaunchedEffect
@@ -287,6 +315,12 @@ private const val FADE_DURATION_MS  = 400
  *   → navController.popBackStack() returns to dashboard.
  *   The DashboardViewModel is retrieved from the "dashboard" back stack entry in
  *   the rankup route so both routes share the same ViewModel instance.
+ *
+ * ── Ascension flow ──
+ *   After the rank-up celebration completes, onRankUpCelebrationComplete() may set
+ *   ascensionEvent in the ViewModel. DashboardScreen's LaunchedEffect detects this
+ *   and navigates to Routes.ASCENSION. AscensionBookScreen calls onFinish() →
+ *   ViewModel.onAscensionBookDismissed() → navController.popBackStack() → dashboard.
  *
  * @param startDestination  The first route to display. Passed by MainActivity
  *                          based on the "has_seen_welcome" SharedPreferences flag.
@@ -308,8 +342,8 @@ fun MissionNavGraph(startDestination: String) {
 
     // ── BOTTOM NAV VISIBILITY RULE ─────────────────────────────────────────────
     // Show the bottom nav only when the user is on one of the three main tabs.
-    // The welcome screen and the rank-up screen are full-screen experiences —
-    // showing a nav bar on them would break the immersion.
+    // The welcome screen, rank-up screen, and ascension screen are full-screen
+    // experiences — showing a nav bar on them would break the immersion.
     val showBottomNav = currentRoute in listOf(
         Routes.DASHBOARD,
         Routes.HISTORY,
@@ -436,6 +470,9 @@ fun MissionNavGraph(startDestination: String) {
             //
             // onNavigateToRankUp is called by DashboardScreen's LaunchedEffect when
             // uiState.rankUpEvent is non-null (i.e. a rank-up just occurred).
+            //
+            // onNavigateToAscension is called by DashboardScreen's LaunchedEffect when
+            // uiState.ascensionEvent is non-null (i.e. the Ascension Book should show).
             composable(
                 route           = Routes.DASHBOARD,
                 enterTransition = {
@@ -541,41 +578,74 @@ fun MissionNavGraph(startDestination: String) {
             //   It IS a NavBackStackEntry (specifically, the "rankup" route's entry), so it
             //   satisfies the API requirement. The remember cache is invalidated if the rankup
             //   entry itself changes — which is the correct re-computation trigger.
+            //
+            // SAFETY NOTE — WHY WE PRE-CHECK THE BACK STACK (v4 fix):
+            //   getBackStackEntry() throws IllegalArgumentException if "dashboard" is not
+            //   on the back stack. This can happen during the composable's Compose exit
+            //   animation: the fadeOut transition keeps this composable in the composition
+            //   tree for 300 ms after the explicit popBackStack() in onContinue has fired.
+            //   During that window, a LiveData emission (e.g. from the ViewModel) can
+            //   trigger a recompose, re-running the remember lambda and crashing.
+            //
+            //   WRONG FIX (try/catch): wrapping remember() and LaunchedEffect in try/catch
+            //   causes a compile error: "Try catch is not supported around composable function
+            //   invocations." Composables cannot appear inside catch blocks — the Compose
+            //   compiler enforces this at build time.
+            //
+            //   CORRECT FIX (v4): read navController.currentBackStack.value to check
+            //   whether "dashboard" is on the stack. currentBackStack is a plain StateFlow
+            //   — reading .value is a Kotlin property access, NOT a composable invocation,
+            //   so it is legal anywhere in the composable body. If "dashboard" is absent,
+            //   we emit a LaunchedEffect to pop safely and return early. Only when "dashboard"
+            //   IS confirmed present do we call remember { getBackStackEntry(...) }, which
+            //   is then guaranteed not to throw.
             composable(
                 route           = Routes.RANKUP,
                 enterTransition = { fadeIn(animationSpec = tween(FADE_DURATION_MS)) },
                 exitTransition  = { fadeOut(animationSpec = tween(300)) }
             ) { backStackEntry ->   // backStackEntry = NavBackStackEntry for the "rankup" route
 
-                // Get the dashboard back stack entry so we can retrieve its ViewModel.
-                // remember(backStackEntry) — keyed on the rankup entry — satisfies the Navigation
-                // Compose requirement that getBackStackEntry() calls during composition be keyed
-                // on a NavBackStackEntry rather than on navController alone.
+                // ── BACK STACK SAFETY CHECK (v4) ──────────────────────────────
+                // Check whether "dashboard" is still on the back stack before calling
+                // getBackStackEntry(). This is a plain StateFlow value read — NOT a
+                // composable call — so it is safe to use anywhere in the composable body.
                 //
-                // SAFETY WRAP: getBackStackEntry() throws IllegalArgumentException if "dashboard"
-                // is not on the back stack. This can happen during the composable's Compose exit
-                // animation — the fadeOut transition keeps this composable in the composition tree
-                // for its full 300 ms duration after the explicit popBackStack() in onContinue has
-                // already fired. During that window, a state change (e.g. LiveData emission) can
-                // trigger a recompose, re-running the remember lambda and crashing.
-                // We catch that exception and fall back to a LaunchedEffect-driven pop so the
-                // navigation side-effect is triggered OUTSIDE of composition (safe pattern).
-                val dashboardEntry = try {
-                    remember(backStackEntry) {
-                        navController.getBackStackEntry(Routes.DASHBOARD)
-                    }
-                } catch (e: IllegalArgumentException) {
-                    // Dashboard is not on the back stack — this route should not be visible.
-                    // Use a targeted pop (Routes.RANKUP, inclusive=true) rather than plain
-                    // popBackStack(). The targeted form is idempotent: if the rankup route has
-                    // already been removed (e.g. by the explicit pop in onContinue) it returns
-                    // false and does nothing, so it can never accidentally pop dashboard.
-                    // LaunchedEffect(backStackEntry) runs once per back stack entry instance —
-                    // the right granularity for a one-shot navigation side effect.
+                // WHY this check is needed: during the 300 ms Compose exit animation
+                // (after the explicit popBackStack() in onContinue fires), this composable
+                // stays alive in the composition tree. A LiveData recompose in that window
+                // would re-run the remember lambda below and crash if "dashboard" is gone.
+                //
+                // WHY NOT try/catch: "Try catch is not supported around composable function
+                // invocations" — the Compose compiler rejects it at build time.
+                val isDashboardOnStack = navController.currentBackStack.value
+                    .any { it.destination.route == Routes.DASHBOARD }
+
+                if (!isDashboardOnStack) {
+                    // Dashboard is gone — this route should not be visible.
+                    // Pop safely via LaunchedEffect (a proper side effect, runs once,
+                    // outside of the composition phase).
+                    //
+                    // WHY popBackStack(Routes.RANKUP, inclusive=true) and NOT plain popBackStack():
+                    //   Targeted pop is idempotent. If "rankup" has already been removed from
+                    //   the stack (e.g. by the onContinue pop above), it returns false and does
+                    //   nothing — it can never accidentally pop "dashboard" by mistake.
+                    //
+                    // WHY LaunchedEffect(backStackEntry) and NOT a direct call:
+                    //   Direct NavController calls inside a composable body are side effects.
+                    //   Compose may execute them at unexpected times (including during exit
+                    //   animations). LaunchedEffect(backStackEntry) runs exactly once per
+                    //   back stack entry instance, safely outside of the composition phase.
                     LaunchedEffect(backStackEntry) {
                         navController.popBackStack(Routes.RANKUP, inclusive = true)
                     }
                     return@composable
+                }
+
+                // "dashboard" is confirmed on the back stack — safe to call getBackStackEntry().
+                // remember(backStackEntry) satisfies the Navigation Compose API requirement
+                // that getBackStackEntry() calls during composition be keyed on a NavBackStackEntry.
+                val dashboardEntry = remember(backStackEntry) {
+                    navController.getBackStackEntry(Routes.DASHBOARD)
                 }
 
                 // Retrieve the SAME DashboardViewModel instance that DashboardScreen is using.
@@ -645,49 +715,48 @@ fun MissionNavGraph(startDestination: String) {
             //   wrapped in remember(backStackEntry) for the same Navigation Compose
             //   API reason documented on the "rankup" route.
             //
-            // BUG-FIX NOTES (both bugs fixed here):
+            // SAFETY NOTE — identical reasoning to the "rankup" route (v4 fix):
+            //   getBackStackEntry() throws if "dashboard" is not on the back stack.
+            //   We pre-check navController.currentBackStack.value — a plain StateFlow
+            //   read, not a composable — before calling getBackStackEntry(). If dashboard
+            //   is absent, we bail with a LaunchedEffect pop. This avoids both the
+            //   crash AND the "try/catch around composable" compile error.
             //
-            //   Bug 1 — Crash "No destination with route dashboard is on the back stack":
-            //     getBackStackEntry() throws IllegalArgumentException when "dashboard" is
-            //     absent. This occurs during the composable's Compose exit animation:
-            //     after the explicit navController.popBackStack() in onFinish fires, the
-            //     fadeOut transition keeps this composable alive in the composition tree
-            //     for 300 ms. A LiveData emission during that window triggers a recompose,
-            //     which re-runs the remember lambda and crashes.
-            //     Fix: wrap in try/catch and bail with LaunchedEffect pop.
-            //
-            //   Bug 2 — Mission tab goes blank after closing the book:
-            //     The original null guard called navController.popBackStack() DIRECTLY
-            //     inside the composable body (a composition side effect). When the book's
-            //     onFinish already popped this route, that same guard fired again during
-            //     the exit-animation recompose — this time popping DASHBOARD (the entry
-            //     below ascension) instead of ascension itself. With dashboard gone, the
-            //     Mission tab showed a blank screen until the user switched tabs and back.
-            //     Fix: the null guard now uses LaunchedEffect so the pop is a proper
-            //     side effect that runs once, outside of composition.
+            // BLANK TAB FIX (v4):
+            //   The null guard below uses LaunchedEffect + targeted idempotent pop so
+            //   that navController calls never fire as raw composition side effects.
+            //   This prevents the exit-animation recompose from accidentally popping
+            //   "dashboard" instead of "ascension", which was what blanked the Mission tab.
             composable(
                 route           = Routes.ASCENSION,
                 enterTransition = { fadeIn(animationSpec = tween(FADE_DURATION_MS)) },
                 exitTransition  = { fadeOut(animationSpec = tween(300)) }
             ) { backStackEntry ->   // backStackEntry = NavBackStackEntry for the "ascension" route
 
-                // SAFETY WRAP: see "Bug 1" comment above for full explanation.
-                // getBackStackEntry() throws if "dashboard" is not on the back stack.
-                // We catch that case and fall back to a targeted LaunchedEffect-driven pop.
-                val dashboardEntry = try {
-                    remember(backStackEntry) {
-                        navController.getBackStackEntry(Routes.DASHBOARD)
-                    }
-                } catch (e: IllegalArgumentException) {
-                    // Dashboard is not on the back stack — this route should not be visible.
-                    // Use popBackStack(Routes.ASCENSION, inclusive=true) — targeted and
-                    // idempotent: if ascension is already gone it returns false harmlessly,
-                    // so dashboard can never be popped by mistake.
-                    // LaunchedEffect(backStackEntry) runs once per back stack entry instance.
+                // ── BACK STACK SAFETY CHECK (v4) ──────────────────────────────
+                // Same pattern as the "rankup" route — see its SAFETY NOTE for the
+                // full explanation. Short version: we must confirm "dashboard" is still
+                // on the back stack before calling getBackStackEntry(), because during
+                // the 300 ms exit animation this composable can be recomposed AFTER the
+                // real popBackStack() has already fired. Reading currentBackStack.value
+                // is a plain Kotlin property access, not a composable call — legal here.
+                val isDashboardOnStack = navController.currentBackStack.value
+                    .any { it.destination.route == Routes.DASHBOARD }
+
+                if (!isDashboardOnStack) {
+                    // Dashboard is not on the back stack — ascension should not be visible.
+                    // Pop via LaunchedEffect (safe side effect, runs once per entry instance).
+                    // popBackStack(Routes.ASCENSION, inclusive=true) is idempotent:
+                    // if ascension is already gone it returns false without touching dashboard.
                     LaunchedEffect(backStackEntry) {
                         navController.popBackStack(Routes.ASCENSION, inclusive = true)
                     }
                     return@composable
+                }
+
+                // "dashboard" is confirmed on the back stack — safe to call getBackStackEntry().
+                val dashboardEntry = remember(backStackEntry) {
+                    navController.getBackStackEntry(Routes.DASHBOARD)
                 }
 
                 val dashboardViewModel: DashboardViewModel = viewModel(dashboardEntry)
@@ -698,9 +767,9 @@ fun MissionNavGraph(startDestination: String) {
                 // (e.g. config change between navigate() and composition).
                 //
                 // IMPORTANT: use LaunchedEffect with a targeted route pop, NOT a direct
-                // navController.popBackStack() call here. See "Bug 2" comment above —
-                // a direct pop fires during the exit-animation recompose and removes
-                // DASHBOARD instead of this ascension route.
+                // navController.popBackStack() call here. A direct pop fires during the
+                // exit-animation recompose and removes DASHBOARD instead of this ascension
+                // route — that is what caused the blank Mission tab bug (v4 fix).
                 //
                 // popBackStack(Routes.ASCENSION, inclusive=true) is idempotent: if the
                 // ascension route has already been removed (e.g. by the explicit pop in
