@@ -99,6 +99,11 @@
  *        a soft glowing dot that orbits the ring like a gleam of light catching
  *        polished metal. See drawShimmerSweep's KDoc for full reasoning. Removed
  *        the now-unused Stroke import (StrokeCap is still used by the radiant rays).
+ *
+ *   v5 — BUILD FIX: the v4 rename of drawShimmerSweep's parameter (wedgeCount →
+ *        glintCount) wasn't propagated to its call site in RankBadgeGlow's
+ *        drawBehind block, causing "No parameter with name 'wedgeCount'". Updated
+ *        the call site to pass glintCount. No behavior change.
  */
 
 package com.example.missionuncomfortable.ui.dashboard
@@ -326,7 +331,7 @@ fun RankBadgeGlow(
                 // not just breathes. This is what separates Conqueror/Sovereign from the
                 // lower ranks' static-feeling halos.
                 if (tier.sweepCount > 0) {
-                    drawShimmerSweep(edgeStop = edgeStop, rotationDeg = sweepAngle, wedgeCount = tier.sweepCount, color = tier.hotColor, alpha = effectiveAlpha)
+                    drawShimmerSweep(edgeStop = edgeStop, rotationDeg = sweepAngle, glintCount = tier.sweepCount, color = tier.hotColor, alpha = effectiveAlpha)
                 }
 
                 // ── ROTATING RADIANT RAYS (Sovereign only) ──
@@ -384,7 +389,7 @@ private fun DrawScope.drawRingGlow(edgeStop: Float, peakOffset: Float, spread: F
 }
 
 /**
- * Draws [wedgeCount] rotating bright "gleam" wedges around the ring using
+ * Draws [glintCount] rotating bright "gleam" dots around the ring using
  * Brush.sweepGradient, rotated continuously by [rotationDeg]. This is what
  * makes Conqueror/Sovereign's glow feel alive and in motion rather than a
  * static painted halo — a highlight is always sliding around the ring, like
