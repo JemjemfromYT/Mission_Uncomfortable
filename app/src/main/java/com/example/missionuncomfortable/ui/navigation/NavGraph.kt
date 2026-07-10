@@ -548,7 +548,7 @@ fun MissionNavGraph(startDestination: String) {
                 val dashboardEntry = remember(backStackEntry) {
                     try {
                         navController.getBackStackEntry(Routes.DASHBOARD)
-                    } catch (e: IllegalArgumentException) {
+                    } catch (_: IllegalArgumentException) {
                         // "dashboard" is not on the back stack — we are in the exit-animation
                         // window. Return null; the guard below will pop this route safely.
                         null
@@ -632,7 +632,7 @@ fun MissionNavGraph(startDestination: String) {
                 val dashboardEntry = remember(backStackEntry) {
                     try {
                         navController.getBackStackEntry(Routes.DASHBOARD)
-                    } catch (e: IllegalArgumentException) {
+                    } catch (_: IllegalArgumentException) {
                         // "dashboard" is gone — exit-animation window. Return null.
                         null
                     }
