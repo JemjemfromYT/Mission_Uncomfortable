@@ -143,7 +143,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.example.missionuncomfortable.ui.dashboard.Rank
 import kotlinx.coroutines.delay
-import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
@@ -1330,8 +1329,7 @@ private fun PageIllustration(
                         val leftAngle = (-170.0 + t * 160.0) * (Math.PI / 180.0)
                         val lx2 = cx + wrR * cos(leftAngle).toFloat()
                         val ly2 = cy + wrR * sin(leftAngle).toFloat()
-                        // Leaf as a small oval rotated toward the centre
-                        val leafAngle = (leftAngle * 180.0 / Math.PI + 90.0).toFloat()
+                        // Leaf as a small oval at this arc position
                         drawOval(
                             ac.copy(alpha = 0.55f + t * 0.15f),
                             topLeft = Offset(lx2 - 5f, ly2 - 8f),
