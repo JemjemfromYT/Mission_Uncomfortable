@@ -537,7 +537,7 @@ private fun StoryReader(lore: AscensionLore, rank: Rank, onCloseBook: () -> Unit
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 28.dp),
-            horizontalArrangement = Arrangement.spacedByCenter(6.dp)
+            horizontalArrangement = spacedByCenter(6.dp)
         ) {
             repeat(totalPages) { index ->
                 val isActive = pagerState.currentPage == index
@@ -558,7 +558,10 @@ private fun StoryReader(lore: AscensionLore, rank: Rank, onCloseBook: () -> Unit
 // A tiny local helper — Arrangement.spacedBy() alone does not centre the row,
 // and Arrangement has no built-in "spacedBy + centred" variant. Rather than
 // wrap every call site in an extra Box, this composes the two behaviours.
-private fun Arrangement.Companion.spacedByCenter(space: Dp) =
+// NOTE: this is a plain top-level function, NOT an extension on Arrangement.Companion —
+// Arrangement is a Kotlin `object`, not a class, so it has no Companion to extend
+// (that mistake caused "Unresolved reference 'Companion'" at build time).
+private fun spacedByCenter(space: Dp): Arrangement.Horizontal =
     Arrangement.spacedBy(space, Alignment.CenterHorizontally)
 
 /**
