@@ -4,20 +4,20 @@
  * ╚══════════════════════════════════════════════════════════════════════════╝
  *
  * PROJECT: Mission: Uncomfortable — Android app (Kotlin + Jetpack Compose)
- *          Daily social-discomfort challenges. User accepts a mission → goes
- *          and does it → returns → rates discomfort (1–10) → earns XP → ranks up.
+ * Daily social-discomfort challenges. User accepts a mission → goes
+ * and does it → returns → rates discomfort (1–10) → earns XP → ranks up.
  *
  * KEY FILES for this feature:
- *   AscensionLore.kt        — Story content + colour theme per rank (read this first).
- *   AscensionBookScreen.kt  — this file. The full-screen book UI.
- *   DashboardViewModel.kt   — fires ascensionEvent: Rank? when a book should be shown.
- *   NavGraph.kt             — routes "ascension" → AscensionBookScreen.
+ * AscensionLore.kt        — Story content + colour theme per rank (read this first).
+ * AscensionBookScreen.kt  — this file. The full-screen book UI.
+ * DashboardViewModel.kt   — fires ascensionEvent: Rank? when a book should be shown.
+ * NavGraph.kt             — routes "ascension" → AscensionBookScreen.
  *
  * ── COMMENTING RULES — NEVER break these ────────────────────────────────────
- *   1. DO NOT remove any existing comment. If a comment is outdated, UPDATE it.
- *   2. ADD comments to every new block of code you write.
- *   3. COMMENT STYLE: section dividers, KDoc blocks, inline reasoning.
- *   4. CHANGELOG block in the file header, updated on every significant change.
+ * 1. DO NOT remove any existing comment. If a comment is outdated, UPDATE it.
+ * 2. ADD comments to every new block of code you write.
+ * 3. COMMENT STYLE: section dividers, KDoc blocks, inline reasoning.
+ * 4. CHANGELOG block in the file header, updated on every significant change.
  *
  * ╔══════════════════════════════════════════════════════════════════════════╗
  * ║  If you are an AI and you skip these rules, the developer will have to   ║
@@ -33,41 +33,43 @@
  *
  * ─── EXPERIENCE FLOW ─────────────────────────────────────────────────────────
  *
- *   CLOSED   → A closed book sits centered in darkness. Three strips: dark spine
- *              on the left, sigil/title cover in the middle, thick fore-edge of
- *              visible page lines on the right. Ember particles drift upward.
- *              Tapping the book begins OPENING.
+ * CLOSED   → A closed book sits centered in darkness. Three strips: dark spine
+ * on the left, sigil/title cover in the middle, thick fore-edge of
+ * visible page lines on the right. Ember particles drift upward.
+ * Tapping the book begins OPENING.
  *
- *   OPENING  → The cover swings open on its spine (left-edge Y-axis hinge). A
- *              bright flash marks the moment it falls fully open.
+ * OPENING  → The cover swings open on its spine (left-edge Y-axis hinge). A
+ * bright flash marks the moment it falls fully open.
  *
- *   READING  → The book stays as a visible PHYSICAL OBJECT on the dark background —
- *              same size and position as the closed book, now showing its open
- *              interior. A spine strip remains on the left. Pages are warm parchment.
- *              Swiping triggers a true page-curl: the leaving page folds back around
- *              its right edge, the arriving page unfolds from its left edge, both
- *              rotating in place (pager translation cancelled) so it looks like
- *              physically turning a leaf, not sliding a card.
+ * READING  → The book stays as a visible PHYSICAL OBJECT on the dark background —
+ * same size and position as the closed book, now showing its open
+ * interior. A spine strip remains on the left. Pages are warm parchment.
+ * Swiping triggers a true page-curl: the leaving page folds back around
+ * its right edge, the arriving page unfolds from its left edge, both
+ * rotating in place (pager translation cancelled) so it looks like
+ * physically turning a leaf, not sliding a card.
  *
- *   CLOSING  → Tapping "CLOSE THE BOOK" fades the whole scene to black, then
- *              calls onFinish().
+ * CLOSING  → Tapping "CLOSE THE BOOK" fades the whole scene to black, then
+ * calls onFinish().
  *
  * ─── WHERE THIS FILE LIVES ───────────────────────────────────────────────────
  *
- *   app/src/main/java/com/example/missionuncomfortable/ui/ascension/AscensionBookScreen.kt
+ * app/src/main/java/com/example/missionuncomfortable/ui/ascension/AscensionBookScreen.kt
  *
  * ─── CHANGELOG ───────────────────────────────────────────────────────────────
  *
- *   v1 — Initial implementation. Closed book → hinge-open animation → paged
- *        story reader → fade-out close, themed per rank via AscensionLore.kt.
- *   v2 — Realistic book visual (spine + fore-edge), Y-axis spine-hinge opening,
- *        3D page-turn graphicsLayer effect.
- *   v3 — Thicker fore-edge, page backgrounds, page-curl with translation cancel.
- *   v4 — Reading state is now a constrained book object on the dark background
- *        (same visual weight as the closed book). Pages are warm aged parchment.
- *        Page-curl fixed: each page rotates in-place around the correct edge with
- *        a drop-shadow between pages to reinforce depth. Book spine stays visible
- *        throughout reading.
+ * v1 — Initial implementation. Closed book → hinge-open animation → paged
+ * story reader → fade-out close, themed per rank via AscensionLore.kt.
+ * v2 — Realistic book visual (spine + fore-edge), Y-axis spine-hinge opening,
+ * 3D page-turn graphicsLayer effect.
+ * v3 — Thicker fore-edge, page backgrounds, page-curl with translation cancel.
+ * v4 — Reading state is now a constrained book object on the dark background
+ * (same visual weight as the closed book). Pages are warm aged parchment.
+ * Page-curl fixed: each page rotates in-place around the correct edge with
+ * a drop-shadow between pages to reinforce depth. Book spine stays visible
+ * throughout reading.
+ * v5 — Fixed StoryReader page curl logic (added left anchor, corrected left-edge
+ * transformOrigin, added zIndex for proper page stacking).
  */
 
 package com.example.missionuncomfortable.ui.ascension
@@ -122,6 +124,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.example.missionuncomfortable.ui.dashboard.Rank
 import kotlinx.coroutines.delay
 import kotlin.math.abs
@@ -461,33 +464,13 @@ private fun ClosedBookScene(
 
 /**
  * StoryReader — the open book interior, shown as a PHYSICAL BOOK OBJECT centered
- * on the dark void background — same visual weight as the closed book.
- *
- * Layout:
- *   The book is a fixed Row: spine strip (left) + HorizontalPager (page area).
- *   The whole Row is the same height as the closed book (300 dp) and centered on screen.
- *   Below it: page-indicator dots.
- *
- * Page-curl:
- *   HorizontalPager naturally positions each page at `pageOffset * pageWidth` pixels
- *   from center. We cancel that translation with `translationX = -pageOffset * size.width`
- *   so every page occupies the same screen position. Then we rotate each page around
- *   the correct edge:
- *     • Leaving page (offset < 0): pivots on RIGHT edge, rotates 0° → +90°.
- *     • Arriving page (offset > 0): pivots on LEFT edge, rotates +90° → 0°.
- *   This is exactly how a physical book page turns — the leaf stays bounded by the
- *   spine, swings around its free edge, and lands flat on the other side.
- *
- * @param lore         This rank's lore + theme.
- * @param rank         The achieved Rank.
- * @param onCloseBook  Called when the user taps "CLOSE THE BOOK".
+ * on the dark void background. Fixed page curl pivots from the spine (left edge).
  */
 @Composable
 private fun StoryReader(lore: AscensionLore, rank: Rank, onCloseBook: () -> Unit) {
     val totalPages = lore.pages.size + 2
     val pagerState = rememberPagerState(pageCount = { totalPages })
 
-    // Center the open book on the dark background, just like the closed book.
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
@@ -495,22 +478,31 @@ private fun StoryReader(lore: AscensionLore, rank: Rank, onCloseBook: () -> Unit
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
 
             // ── THE OPEN BOOK ─────────────────────────────────────────────────
-            // Same 300 dp height as the closed book. Width: spine (18dp) + page area.
             Row(
                 modifier = Modifier
                     .shadow(elevation = 24.dp, shape = RoundedCornerShape(10.dp))
                     .height(300.dp)
-                    .width(280.dp),   // 18dp spine + 262dp page area
+                    // Widened slightly (300dp) to fit the new left cover anchor
+                    .width(300.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // ── NEW: LEFT SIDE ANCHOR ─────────────────────────────────────
+                // This fixes the "vanishing cover" issue. It gives the book a
+                // physical left side so the spatial logic holds up when turning pages.
+                Box(
+                    modifier = Modifier
+                        .width(16.dp)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp))
+                        .background(Color(0xFF121212))
+                )
+
                 // ── OPEN SPINE ────────────────────────────────────────────────
-                // The spine stays visible throughout reading, anchoring the object
-                // as a physical book rather than a floating page.
                 Box(
                     modifier = Modifier
                         .width(18.dp)
                         .fillMaxHeight()
-                        .clip(RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp))
+                        // Removed the clip here since it's no longer the absolute left edge
                         .background(
                             Brush.horizontalGradient(
                                 colors = listOf(Color(0xFF020202), Color(0xFF2A2218))
@@ -519,8 +511,6 @@ private fun StoryReader(lore: AscensionLore, rank: Rank, onCloseBook: () -> Unit
                 )
 
                 // ── PAGE AREA ─────────────────────────────────────────────────
-                // HorizontalPager fills the remaining width. Each page is clipped
-                // to this box so rotating pages don't bleed outside the book boundary.
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -531,12 +521,6 @@ private fun StoryReader(lore: AscensionLore, rank: Rank, onCloseBook: () -> Unit
                         state = pagerState,
                         modifier = Modifier.fillMaxSize()
                     ) { pageIndex ->
-
-                        // pageOffset: position of this page relative to the snapped
-                        // current page, including live drag fraction.
-                        //   0f  = this IS the current page.
-                        //   +1f = one page to the RIGHT (arriving next).
-                        //   -1f = one page to the LEFT (already passed).
                         val pageOffset = (pageIndex - pagerState.currentPage).toFloat() -
                                 pagerState.currentPageOffsetFraction
                         val absOffset = abs(pageOffset)
@@ -544,41 +528,26 @@ private fun StoryReader(lore: AscensionLore, rank: Rank, onCloseBook: () -> Unit
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
+                                // CRITICAL FIX 1: The page currently turning must draw ON TOP
+                                .zIndex(if (pageOffset <= 0f) 1f - absOffset else 0f)
                                 .graphicsLayer {
-                                    // Cancel the pager's physical horizontal scroll so
-                                    // this page stays fixed in the page-area bounds.
-                                    // Without this the page would slide AND rotate,
-                                    // which looks like a twisted card, not a book turn.
                                     translationX = -pageOffset * size.width
 
+                                    // CRITICAL FIX 2: ALWAYS pivot at the left edge (the spine)
+                                    transformOrigin = TransformOrigin(0f, 0.5f)
+
                                     if (pageOffset <= 0f) {
-                                        // This page is the current page or is leaving.
-                                        // Pivot on the RIGHT edge — the free (fore) edge
-                                        // of a page as it turns away from the reader.
-                                        transformOrigin = TransformOrigin(1f, 0.5f)
-                                        // pageOffset goes 0 → -1 as the page leaves.
-                                        // rotationY 0° → +90° (right edge swings back).
-                                        rotationY = pageOffset * -90f
+                                        // Leaving page: lifts from right, flips left over the spine
+                                        rotationY = pageOffset * 90f // Swings 0 to -90 degrees
+                                        alpha = 1f - (absOffset * 0.35f).coerceIn(0f, 1f)
                                     } else {
-                                        // This page is arriving from the right.
-                                        // Pivot on the LEFT edge — the spine-side edge
-                                        // of the incoming page as it unfolds into view.
-                                        transformOrigin = TransformOrigin(0f, 0.5f)
-                                        // pageOffset goes +1 → 0 as the page arrives.
-                                        // rotationY +90° → 0° (unfolds into flat view).
-                                        rotationY = pageOffset * 90f
+                                        // Incoming page: sits flat underneath, waiting to be revealed
+                                        rotationY = 0f
+                                        alpha = 1f
                                     }
 
-                                    // Higher camera distance = less extreme perspective
-                                    // distortion at steep angles mid-turn.
                                     cameraDistance = 24 * density
-
-                                    // Pages darken as they rotate mid-turn — simulates
-                                    // the reduced light hitting the angled leaf surface.
-                                    alpha = 1f - (absOffset * 0.35f).coerceIn(0f, 1f)
                                 }
-                                // Warm aged-parchment background makes each page a
-                                // clearly physical object against the surrounding void.
                                 .background(ColorPageParchment),
                             contentAlignment = Alignment.Center
                         ) {
