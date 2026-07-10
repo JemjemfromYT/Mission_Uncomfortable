@@ -90,6 +90,15 @@
  *        "State<Float> has no method getValue" because androidx.compose.runtime.getValue
  *        (the extension that makes `by` work on a Compose State) was never imported.
  *        Added the missing import. No drawing/animation logic changed.
+ *
+ *   v4 — VISUAL FIX: the Conqueror/Sovereign "shimmer sweep" was a rotating
+ *        stroked arc with round caps — which looks exactly like Android's own
+ *        indeterminate loading spinner, not a prestige effect (confirmed via a
+ *        real on-device screenshot showing a "yellow snake" circling the badge).
+ *        Replaced the arc-stroke shimmer with a small travelling radial "glint" —
+ *        a soft glowing dot that orbits the ring like a gleam of light catching
+ *        polished metal. See drawShimmerSweep's KDoc for full reasoning. Removed
+ *        the now-unused Stroke import (StrokeCap is still used by the radiant rays).
  */
 
 package com.example.missionuncomfortable.ui.dashboard
@@ -114,7 +123,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap             // FIX: StrokeCap lives in androidx.compose.ui.graphics, NOT .drawscope — wrong package was causing "Unresolved reference"
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
@@ -382,28 +390,49 @@ private fun DrawScope.drawRingGlow(edgeStop: Float, peakOffset: Float, spread: F
  * static painted halo — a highlight is always sliding around the ring, like
  * light catching polished metal.
  *
- * wedgeCount = 2 places the wedges on opposite sides of the ring (180° apart)
+ * glintCount = 2 places the glints on opposite sides of the ring (180° apart)
  * for Sovereign's denser, busier shimmer.
+ *
+ * v4 FIX: this used to be a rotating STROKED ARC with round caps (Stroke +
+ * drawArc). That shape — a thick rounded-cap band sweeping around a circle —
+ * is visually IDENTICAL to Android's own indeterminate CircularProgressIndicator
+ * ("loading spinner"), which is exactly the wrong association for a "very high
+ * rank" badge (a screenshot showed it reading as a yellow snake/loading spinner,
+ * not a prestige effect). Also, Brush.sweepGradient always maps its colour stops
+ * across the FULL 360° regardless of the arc's own startAngle/sweepAngle window,
+ * so the arc's visible colour didn't line up with its rotation the way intended —
+ * it rendered as a flat, hard-edged pill instead of a soft gradient sweep.
+ * Replaced with a small travelling radial "glint" — a soft glowing dot that
+ * orbits the ring, like a gleam of light catching polished metal — which reads
+ * as a specular highlight, not a loading indicator.
  */
-private fun DrawScope.drawShimmerSweep(edgeStop: Float, rotationDeg: Float, wedgeCount: Int, color: Color, alpha: Float) {
-    rotate(degrees = rotationDeg, pivot = center) {
-        val ringRadius = size.minDimension / 2f * (edgeStop + 0.045f).coerceAtMost(0.95f)
-        val strokeWidth = size.minDimension * 0.045f
-        val wedgeAngle = 34f
-        val step = 360f / wedgeCount
-        for (i in 0 until wedgeCount) {
-            drawArc(
-                brush = Brush.sweepGradient(
-                    colors = listOf(Color.Transparent, color.copy(alpha = alpha), Color.Transparent)
+private fun DrawScope.drawShimmerSweep(edgeStop: Float, rotationDeg: Float, glintCount: Int, color: Color, alpha: Float) {
+    // Ring radius the glint orbits along — matches where the hot inner ring layer peaks.
+    val ringRadius = size.minDimension / 2f * (edgeStop + 0.03f).coerceAtMost(0.95f)
+    // Soft glow blob size — big enough to read as a gleam, small enough to stay a highlight,
+    // not a second badge-sized blob.
+    val glintRadius = size.minDimension * 0.10f
+    val step = 360f / glintCount
+    for (i in 0 until glintCount) {
+        val angleRad = Math.toRadians((rotationDeg + i * step).toDouble())
+        // Point on the ring at the current rotation angle — this IS the travelling gleam's position.
+        val point = Offset(
+            x = center.x + ringRadius * kotlin.math.cos(angleRad).toFloat(),
+            y = center.y + ringRadius * kotlin.math.sin(angleRad).toFloat()
+        )
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    color.copy(alpha = alpha),
+                    color.copy(alpha = alpha * 0.35f),
+                    Color.Transparent
                 ),
-                startAngle = i * step - wedgeAngle / 2f,
-                sweepAngle = wedgeAngle,
-                useCenter = false,
-                style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
-                topLeft = Offset(center.x - ringRadius, center.y - ringRadius),
-                size = androidx.compose.ui.geometry.Size(ringRadius * 2, ringRadius * 2)
-            )
-        }
+                center = point,
+                radius = glintRadius
+            ),
+            radius = glintRadius,
+            center = point
+        )
     }
 }
 
