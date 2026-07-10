@@ -18,6 +18,8 @@
  *   RankUpScreen.kt        — Full-screen rank-up celebration with spring animation
  *   StatsViewModel.kt      — Computes stats (streaks, category breakdown, avg discomfort)
  *   StatsScreen.kt         — Bar charts: category breakdown + discomfort by day of week
+ *   AscensionLore.kt       — Story content + colour theme per rank (Ascension Book feature)
+ *   AscensionBookScreen.kt — Full-screen storybook shown on rank promotion
  *
  * ── COMMENTING RULES — NEVER break these ────────────────────────────────────
  *
@@ -52,6 +54,9 @@
  *   "best_streak"          → Int.   All-time best streak.
  *   "mission_history_json" → String. JSON array of CompletedMissionEntry objects.
  *                            Newest entry is first (prepended on each save).
+ *   "ascension_seen_levels" → String. Comma-separated list of Rank.level values
+ *                            (e.g. "1,2,3") whose Ascension Book has already been
+ *                            shown. Ensures each rank's book is shown exactly once.
  *
  * ╔══════════════════════════════════════════════════════════════════════════╗
  * ║  If you are an AI and you skip these rules, the developer will have to   ║
@@ -98,6 +103,24 @@
  *            - onRankUpCelebrationComplete() added — clears rankUpEvent, sets isDailyComplete.
  *            - onSubmitReflection() compares old rank level vs new rank level.
  *              If newRank.level > oldRank.level → sets rankUpEvent = newRank.
+ *
+ *   v3 — Ascension Book feature:
+ *            - ascensionEvent: Rank? added to UiState. Non-null when the full-screen
+ *              Ascension Book (AscensionBookScreen.kt) should be shown.
+ *            - New SharedPreferences key KEY_ASCENSION_SEEN tracks which rank levels
+ *              have already had their book shown (comma-separated level list).
+ *            - loadInitialData(): if the Observer (level 1) book has never been
+ *              shown, sets ascensionEvent so it plays once on the user's first
+ *              ever visit to the dashboard — before any XP has been earned.
+ *            - onRankUpCelebrationComplete(): now reads the rank the user just
+ *              achieved (from the rankUpEvent being cleared) and, if that rank's
+ *              book hasn't been shown yet, sets ascensionEvent for it. This means
+ *              the Ascension Book plays AFTER the existing RankUpScreen ceremony,
+ *              not simultaneously with it — see NavGraph.kt's ROUTE: ASCENSION
+ *              comment for the full sequencing explanation.
+ *            - onAscensionBookDismissed() added — called when the user taps
+ *              "CLOSE THE BOOK". Marks the rank's book as seen and clears
+ *              ascensionEvent.
  */
 
 package com.example.missionuncomfortable.ui.dashboard
@@ -151,7 +174,17 @@ data class DashboardUiState(
     // ── Rank-Up Event (Phase 7) ────────────────────────────────────────────
     // Non-null when a rank-up just occurred. DashboardScreen shows RankUpScreen.
     // Cleared by onRankUpCelebrationComplete().
-    val rankUpEvent: Rank? = null
+    val rankUpEvent: Rank? = null,
+
+    // ── Ascension Book Event (v3) ──────────────────────────────────────────
+    // Non-null when the full-screen Ascension Book should be shown for the
+    // given Rank. Set either:
+    //   (a) on the very first ever load, for the Observer rank (see loadInitialData), or
+    //   (b) after the RankUpScreen celebration completes for a new promotion
+    //       (see onRankUpCelebrationComplete).
+    // DashboardScreen shows AscensionBookScreen when this is non-null.
+    // Cleared by onAscensionBookDismissed().
+    val ascensionEvent: Rank? = null
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -190,6 +223,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
         // History (Phase 6)
         const val KEY_HISTORY_JSON         = "mission_history_json"
+
+        // Ascension Book (v3) — comma-separated Rank.level values already shown,
+        // e.g. "1,2,3". Read via hasSeenAscension(), written via markAscensionSeen().
+        const val KEY_ASCENSION_SEEN       = "ascension_seen_levels"
     }
 
     // ── LIVE DATA ─────────────────────────────────────────────────────────────
@@ -213,6 +250,8 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
      * 3. Loads total XP and computes XpProgress.
      * 4. Loads streak count.
      * 5. Checks if today has already been completed.
+     * 6. (v3) Checks if the Observer's Ascension Book has ever been shown. If not,
+     *    sets ascensionEvent so it plays on this — the user's very first — visit.
      */
     private fun loadInitialData() {
         val todayString = today()
@@ -260,6 +299,15 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         val lastCompleted = prefs.getString(KEY_LAST_COMPLETED_DATE, "")
         val isDailyComplete = missionStatus == MissionStatus.COMPLETED
 
+        // ── v3: FIRST-EVER-LAUNCH ASCENSION BOOK (The Observer) ────────────────
+        // The user starts at Level 1 (Observer) with no rank-up event ever firing
+        // for it — onSubmitReflection() only fires rankUpEvent on a level INCREASE,
+        // and there is no level below Observer to increase from. So the Observer's
+        // book is triggered here instead: the very first time loadInitialData()
+        // runs and the Observer book has never been marked as seen.
+        val observerRank = ALL_RANKS.first()   // Level 1 — always Observer
+        val shouldShowObserverBook = !hasSeenAscension(observerRank.level)
+
         _uiState.value = DashboardUiState(
             isLoading             = false,
             todaysMission         = restoredMission,
@@ -268,7 +316,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             currentDiscomfortRating = 5,
             isDailyComplete       = isDailyComplete,
             xpProgress            = xpProgress,
-            streakCount           = streakCount
+            streakCount           = streakCount,
+            // v3: non-null only on the user's very first ever dashboard load.
+            ascensionEvent        = if (shouldShowObserverBook) observerRank else null
         )
     }
 
@@ -360,6 +410,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
      *   4. Check for rank-up (Phase 7)
      *   5. If ranked up → set rankUpEvent = newRank (Phase 7)
      *   6. If no rank-up → set isDailyComplete = true
+     *
+     * NOTE (v3): ascensionEvent is intentionally NOT set here even on a rank-up.
+     * It is set later, in onRankUpCelebrationComplete(), so the Ascension Book
+     * plays AFTER the RankUpScreen ceremony finishes rather than racing it.
      */
     fun onSubmitReflection() {
         val current = _uiState.value ?: return
@@ -422,13 +476,46 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
      *
      * Phase 7: Clears the rankUpEvent and sets isDailyComplete = true.
      * This causes DashboardScreen to transition to DailyCompleteScreen.
+     *
+     * v3: Also decides whether to queue the Ascension Book. Reads the rank that
+     * was just achieved (current.rankUpEvent, BEFORE it is cleared below) and,
+     * if that rank's book has never been shown, sets ascensionEvent to it.
+     * DashboardScreen's LaunchedEffect(uiState.ascensionEvent) then navigates to
+     * AscensionBookScreen once this function returns to Dashboard. This ordering
+     * — book AFTER celebration, not simultaneous with it — is intentional: the
+     * badge ceremony and the storybook are two distinct beats, and showing them
+     * both at once would undercut each other.
      */
     fun onRankUpCelebrationComplete() {
         val current = _uiState.value ?: return
+
+        // Capture the rank being celebrated BEFORE we clear rankUpEvent below.
+        val achievedRank = current.rankUpEvent
+        val shouldShowBook = achievedRank != null && !hasSeenAscension(achievedRank.level)
+
         _uiState.value = current.copy(
             rankUpEvent     = null,
-            isDailyComplete = true
+            isDailyComplete = true,
+            // v3: queue the Ascension Book for this rank if it hasn't been seen yet.
+            ascensionEvent  = if (shouldShowBook) achievedRank else null
         )
+    }
+
+    /**
+     * onAscensionBookDismissed — user tapped "CLOSE THE BOOK" on AscensionBookScreen
+     * and its closing fade animation finished.
+     *
+     * v3: New function. Marks the current ascensionEvent's rank as seen (so its
+     * book never plays again) and clears ascensionEvent so DashboardScreen
+     * returns to its normal state.
+     */
+    fun onAscensionBookDismissed() {
+        val current = _uiState.value ?: return
+        val rank = current.ascensionEvent ?: return
+
+        markAscensionSeen(rank.level)
+
+        _uiState.value = current.copy(ascensionEvent = null)
     }
 
     /**
@@ -551,6 +638,53 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         }
 
         prefs.edit().putString(KEY_HISTORY_JSON, updatedJson).commit()
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // PRIVATE: ASCENSION BOOK (v3)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * hasSeenAscension — checks whether the Ascension Book for [level] has
+     * already been shown to this user.
+     *
+     * Reads KEY_ASCENSION_SEEN as a comma-separated string (e.g. "1,2") and
+     * checks whether [level] is one of the entries. Returns false (never seen)
+     * if the key doesn't exist yet, which is correct for a brand-new install.
+     *
+     * @param level  Rank.level to check (1–5).
+     * @return       True if that rank's book has already been shown.
+     */
+    private fun hasSeenAscension(level: Int): Boolean {
+        val seen = prefs.getString(KEY_ASCENSION_SEEN, "") ?: ""
+        if (seen.isBlank()) return false
+        return seen.split(",").contains(level.toString())
+    }
+
+    /**
+     * markAscensionSeen — records that the Ascension Book for [level] has now
+     * been shown, so it never plays again for this user.
+     *
+     * Reads the existing comma-separated list, appends [level] if it isn't
+     * already present (defensive — should never already be present given the
+     * call sites guard with hasSeenAscension() first), and writes it back.
+     *
+     * @param level  Rank.level to mark as seen (1–5).
+     */
+    private fun markAscensionSeen(level: Int) {
+        val seen = prefs.getString(KEY_ASCENSION_SEEN, "") ?: ""
+        val levels = if (seen.isBlank()) {
+            mutableListOf()
+        } else {
+            seen.split(",").toMutableList()
+        }
+
+        val levelString = level.toString()
+        if (!levels.contains(levelString)) {
+            levels.add(levelString)
+        }
+
+        prefs.edit().putString(KEY_ASCENSION_SEEN, levels.joinToString(",")).commit()
     }
 
     // ─────────────────────────────────────────────────────────────────────────

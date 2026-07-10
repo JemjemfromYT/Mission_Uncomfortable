@@ -161,6 +161,7 @@ import androidx.navigation.compose.NavHost                              // Hosts
 import androidx.navigation.compose.composable                           // Registers a route in the NavHost
 import androidx.navigation.compose.currentBackStackEntryAsState         // Observes current destination as State
 import androidx.navigation.compose.rememberNavController                // Creates and remembers a NavController
+import com.example.missionuncomfortable.ui.ascension.AscensionBookScreen // Full-screen ascension storybook
 import com.example.missionuncomfortable.ui.dashboard.DashboardScreen   // Mission dashboard screen
 import com.example.missionuncomfortable.ui.dashboard.DashboardViewModel // ViewModel for dashboard + rank-up
 import com.example.missionuncomfortable.ui.history.HistoryScreen        // Mission history screen
@@ -185,11 +186,12 @@ private val ColorTextSecondary  = Color(0xFF8A8A8A)   // Muted grey — inactive
  * without magic string literals scattered through the codebase.
  */
 object Routes {
-    const val WELCOME   = "welcome"    // First-launch intro screen
-    const val DASHBOARD = "dashboard"  // Main daily mission screen (start destination)
-    const val HISTORY   = "history"    // Completed mission history list
-    const val STATS     = "stats"      // Category + discomfort bar charts
-    const val RANKUP    = "rankup"     // Full-screen rank-up celebration overlay
+    const val WELCOME    = "welcome"    // First-launch intro screen
+    const val DASHBOARD  = "dashboard"  // Main daily mission screen (start destination)
+    const val HISTORY    = "history"    // Completed mission history list
+    const val STATS      = "stats"      // Category + discomfort bar charts
+    const val RANKUP     = "rankup"     // Full-screen rank-up celebration overlay
+    const val ASCENSION  = "ascension"  // Full-screen Ascension Book storybook overlay
 }
 
 // ─── BOTTOM NAV ITEM MODEL ────────────────────────────────────────────────────
@@ -438,6 +440,14 @@ fun MissionNavGraph(startDestination: String) {
                         navController.navigate(Routes.RANKUP) {
                             launchSingleTop = true
                         }
+                    },
+                    onNavigateToAscension = {
+                        // The ViewModel set ascensionEvent — navigate to the storybook screen.
+                        // See ROUTE: ASCENSION below for why this fires separately from
+                        // (and after) the rank-up celebration route.
+                        navController.navigate(Routes.ASCENSION) {
+                            launchSingleTop = true
+                        }
                     }
                 )
             }
@@ -554,8 +564,60 @@ fun MissionNavGraph(startDestination: String) {
                     onContinue = {
                         // User tapped CONTINUE on the celebration screen.
                         //   1. Clear rankUpEvent + set isDailyComplete = true in the ViewModel.
+                        //      This may ALSO set ascensionEvent (see DashboardViewModel
+                        //      .onRankUpCelebrationComplete's KDoc) if this rank's Ascension
+                        //      Book hasn't been shown yet.
                         //   2. Pop the rankup route → returns to dashboard.
+                        //   3. Back on "dashboard", DashboardScreen's LaunchedEffect notices
+                        //      ascensionEvent is non-null and navigates to Routes.ASCENSION —
+                        //      so the storybook opens right after the celebration, not during it.
                         dashboardViewModel.onRankUpCelebrationComplete()
+                        navController.popBackStack()
+                    }
+                )
+            }
+
+            // ── ROUTE: ASCENSION ───────────────────────────────────────────────
+            // Full-screen "Ascension Book" storybook. Navigated to automatically
+            // when DashboardScreen detects uiState.ascensionEvent != null — either
+            // on the user's very first ever dashboard load (the Observer's book),
+            // or right after the "rankup" route pops back to dashboard following
+            // a promotion (see DashboardViewModel.onRankUpCelebrationComplete).
+            //
+            // SHARED VIEWMODEL NOTE — identical reasoning to the "rankup" route above:
+            //   This route needs the SAME DashboardViewModel instance as "dashboard"
+            //   so onAscensionBookDismissed() marks the book as seen on the correct
+            //   object. Retrieved via navController.getBackStackEntry(Routes.DASHBOARD),
+            //   wrapped in remember(backStackEntry) for the same Navigation Compose
+            //   API reason documented on the "rankup" route.
+            composable(
+                route           = Routes.ASCENSION,
+                enterTransition = { fadeIn(animationSpec = tween(FADE_DURATION_MS)) },
+                exitTransition  = { fadeOut(animationSpec = tween(300)) }
+            ) { backStackEntry ->   // backStackEntry = NavBackStackEntry for the "ascension" route
+
+                val dashboardEntry = remember(backStackEntry) {
+                    navController.getBackStackEntry(Routes.DASHBOARD)
+                }
+
+                val dashboardViewModel: DashboardViewModel = viewModel(dashboardEntry)
+                val uiState = dashboardViewModel.uiState.value
+
+                // Guard: if somehow we arrive here with no ascensionEvent, pop back
+                // immediately. Prevents a blank AscensionBookScreen if the event was
+                // already cleared (e.g. config change between navigate() and composition).
+                if (uiState?.ascensionEvent == null) {
+                    navController.popBackStack()
+                    return@composable
+                }
+
+                AscensionBookScreen(
+                    rank     = uiState.ascensionEvent,
+                    onFinish = {
+                        // User tapped CLOSE THE BOOK and the closing fade finished.
+                        //   1. Mark this rank's book as seen + clear ascensionEvent.
+                        //   2. Pop the ascension route → returns to dashboard.
+                        dashboardViewModel.onAscensionBookDismissed()
                         navController.popBackStack()
                     }
                 )

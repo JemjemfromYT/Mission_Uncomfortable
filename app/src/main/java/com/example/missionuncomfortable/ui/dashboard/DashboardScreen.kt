@@ -227,19 +227,30 @@ private val ColorDivider = Color(0xFF2E2E2E)           // Very subtle divider li
  *   - DashboardScreen itself has NO NavController dependency — it only calls the callback.
  *     This keeps the composable decoupled from navigation infrastructure.
  *
- * @param viewModel           The ViewModel that manages this screen's state.
- *                            Provided automatically by `viewModel()` — you don't pass one manually.
- * @param onMissionClicked    Called when the user taps the mission card area (not the action buttons).
- *                            Use this to navigate to the Mission Detail screen in the future.
- * @param onNavigateToRankUp  v10: Called when uiState.rankUpEvent becomes non-null.
- *                            The caller is responsible for navigating to RankUpScreen.
- *                            Defaults to a no-op so Previews and tests don't crash.
+ * v14 (Ascension Book feature): Added onNavigateToAscension parameter and LaunchedEffect,
+ *   mirroring the v10 rank-up pattern exactly. When uiState.ascensionEvent becomes
+ *   non-null — either on the user's very first ever dashboard load (Observer book)
+ *   or after a rank-up celebration finishes (see DashboardViewModel.onRankUpCelebrationComplete) —
+ *   this fires onNavigateToAscension(), which NavGraph.kt uses to navigate to
+ *   AscensionBookScreen.
+ *
+ * @param viewModel            The ViewModel that manages this screen's state.
+ *                             Provided automatically by `viewModel()` — you don't pass one manually.
+ * @param onMissionClicked     Called when the user taps the mission card area (not the action buttons).
+ *                             Use this to navigate to the Mission Detail screen in the future.
+ * @param onNavigateToRankUp   v10: Called when uiState.rankUpEvent becomes non-null.
+ *                             The caller is responsible for navigating to RankUpScreen.
+ *                             Defaults to a no-op so Previews and tests don't crash.
+ * @param onNavigateToAscension v14: Called when uiState.ascensionEvent becomes non-null.
+ *                             The caller is responsible for navigating to AscensionBookScreen.
+ *                             Defaults to a no-op so Previews and tests don't crash.
  */
 @Composable
 fun DashboardScreen(
     viewModel: DashboardViewModel = viewModel(),   // Auto-creates or retrieves existing ViewModel
     onMissionClicked: () -> Unit = {},             // Default to no-op so Previews don't crash
-    onNavigateToRankUp: () -> Unit = {}            // v10: called when a rank-up event is detected
+    onNavigateToRankUp: () -> Unit = {},           // v10: called when a rank-up event is detected
+    onNavigateToAscension: () -> Unit = {}         // v14: called when an ascension book event is detected
 ) {
     // Observe the ViewModel's LiveData as a Compose State.
     // The `?: DashboardUiState()` provides a safe default while the first value arrives.
@@ -255,6 +266,18 @@ fun DashboardScreen(
     LaunchedEffect(uiState.rankUpEvent) {
         if (uiState.rankUpEvent != null) {
             onNavigateToRankUp()
+        }
+    }
+
+    // ── v14: ASCENSION BOOK NAVIGATION ─────────────────────────────────────────
+    // Same pattern as the rank-up LaunchedEffect above. Fires whenever
+    // ascensionEvent transitions from null to non-null — which happens either
+    // on the user's very first ever dashboard load (Observer book) or right
+    // after onRankUpCelebrationComplete() queues a new rank's book. Does nothing
+    // on the non-null→null transition once the book is dismissed.
+    LaunchedEffect(uiState.ascensionEvent) {
+        if (uiState.ascensionEvent != null) {
+            onNavigateToAscension()
         }
     }
 
