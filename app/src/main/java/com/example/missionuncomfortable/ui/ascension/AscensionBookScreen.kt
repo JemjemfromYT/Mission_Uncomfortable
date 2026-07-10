@@ -158,6 +158,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import com.example.missionuncomfortable.R
 import com.example.missionuncomfortable.ui.dashboard.Rank
 import kotlinx.coroutines.delay
 import kotlin.math.cos
@@ -258,20 +259,18 @@ private class AscensionAudioState(
 }
 
 /**
- * The single BGM track used throughout the entire book experience.
- * Rank-specific ambient loops (bgm_observer, bgm_initiate, etc.) live on the
- * main screen — not here.
+ * Direct R.raw resource IDs for every SFX event.
+ * Using R.raw.* (compile-time constants) instead of getIdentifier() avoids the
+ * discouraged-API warning and lets the build tool verify files exist at compile time.
+ * All 6 .mp3 files must be present in app/src/main/res/raw/.
  */
-private const val BGM_BOOK_FILE = "bgm_book"
-
-/** Maps each SfxEvent to its res/raw/ file name. */
-private val sfxFileNames = mapOf(
-    SfxEvent.UI_CLICK   to "sfx_ui_click",
-    SfxEvent.BOOK_TAP   to "sfx_book_tap",
-    SfxEvent.BOOK_OPEN  to "sfx_book_open",
-    SfxEvent.FLASH      to "sfx_flash",
-    SfxEvent.PAGE_TURN  to "sfx_page_turn",
-    SfxEvent.BOOK_CLOSE to "sfx_book_close"
+private val sfxResIds = mapOf(
+    SfxEvent.UI_CLICK   to R.raw.sfx_ui_click,
+    SfxEvent.BOOK_TAP   to R.raw.sfx_book_tap,
+    SfxEvent.BOOK_OPEN  to R.raw.sfx_book_open,
+    SfxEvent.FLASH      to R.raw.sfx_flash,
+    SfxEvent.PAGE_TURN  to R.raw.sfx_page_turn,
+    SfxEvent.BOOK_CLOSE to R.raw.sfx_book_close
 )
 
 /**
@@ -292,29 +291,26 @@ private fun rememberAscensionAudio(context: Context): AscensionAudioState {
 
         // ── BGM: MediaPlayer — single looping book atmosphere track ───────────
         // bgm_book.mp3 is the ONLY BGM used inside the book screen.
+        // R.raw.bgm_book is a compile-time constant — no getIdentifier() needed.
         // The 5 rank-specific tracks (bgm_observer, etc.) belong on the main screen.
-        val bgmResId = context.resources.getIdentifier(BGM_BOOK_FILE, "raw", context.packageName)
-
-        val bgmPlayer: MediaPlayer? = if (bgmResId != 0) {
-            runCatching {
-                MediaPlayer().apply {
-                    val afd = context.resources.openRawResourceFd(bgmResId)
-                    setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
-                    afd.close()
-                    setAudioAttributes(
-                        AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_GAME)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                            .build()
-                    )
-                    isLooping = true
-                    setVolume(0.50f, 0.50f) // 50% — atmospheric, not overpowering
-                    // prepare() is synchronous and fine for local res/raw files
-                    // (no network I/O — just reads a file descriptor).
-                    prepare()
-                }
-            }.getOrNull()
-        } else null // File not in res/raw yet — degrade gracefully
+        val bgmPlayer: MediaPlayer? = runCatching {
+            MediaPlayer().apply {
+                val afd = context.resources.openRawResourceFd(R.raw.bgm_book)
+                setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+                afd.close()
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_GAME)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build()
+                )
+                isLooping = true
+                setVolume(0.50f, 0.50f) // 50% — atmospheric, not overpowering
+                // prepare() is synchronous and fine for local res/raw files
+                // (no network I/O — just reads a file descriptor).
+                prepare()
+            }
+        }.getOrNull() // null if file missing — degrades gracefully with no crash
 
         // ── SFX: SoundPool — low-latency one-shot effects ────────────────────
         val sfxAttributes = AudioAttributes.Builder()
@@ -327,10 +323,10 @@ private fun rememberAscensionAudio(context: Context): AscensionAudioState {
             .setAudioAttributes(sfxAttributes)
             .build()
 
-        // Load each SFX; missing files get id=0 and are skipped at play time.
-        val soundIds: Map<SfxEvent, Int> = sfxFileNames.mapValues { (_, name) ->
-            val resId = context.resources.getIdentifier(name, "raw", context.packageName)
-            if (resId != 0) pool.load(context, resId, 1) else 0
+        // Load each SFX using compile-time R.raw.* IDs — no getIdentifier() needed.
+        // runCatching per entry so one missing file never blocks the others.
+        val soundIds: Map<SfxEvent, Int> = sfxResIds.mapValues { (_, resId) ->
+            runCatching { pool.load(context, resId, 1) }.getOrElse { 0 }
         }
 
         AscensionAudioState(bgmPlayer, pool, soundIds)
