@@ -35,15 +35,22 @@
  *
  *   CLOSED   → A closed book sits in darkness, breathing with a slow ambient glow
  *              in the rank's colour. Ember particles drift upward around it.
+ *              The book is rendered as three strips: a dark spine on the left,
+ *              the cover face in the centre, and fore-edge page lines on the right —
+ *              so it reads as a real physical book, not a flat rectangle.
  *              Tapping the book (or the "OPEN" hint beneath it) begins OPENING.
  *
- *   OPENING  → The cover swings open (graphicsLayer rotationX, hinged at the top
- *              edge) while a bright flash sweeps across the screen at the moment
- *              of maximum opening — the "the light was always inside" beat.
+ *   OPENING  → The cover swings open hinged on its LEFT (spine) edge — exactly
+ *              how a real book opens — using graphicsLayer rotationY with
+ *              TransformOrigin(0f, 0.5f). A bright flash sweeps the screen at the
+ *              moment of maximum opening — the "the light was always inside" beat.
  *
  *   READING  → A HorizontalPager presents the story: a title page, each lore
  *              paragraph as its own page, and a final page with the closing line
- *              and a "CLOSE THE BOOK" button. Small dot indicators show progress.
+ *              and a "CLOSE THE BOOK" button. Each page gets a graphicsLayer
+ *              rotationY based on its drag offset, so swiping feels like physically
+ *              turning leaves rather than sliding flat cards. Small dot indicators
+ *              show progress.
  *
  *   CLOSING  → Tapping "CLOSE THE BOOK" fades the whole scene to black, then
  *              calls onFinish() so the caller (NavGraph) can pop back to Dashboard.
@@ -56,6 +63,8 @@
  *
  *   v1 — Initial implementation. Closed book → hinge-open animation → paged
  *        story reader → fade-out close, themed per rank via AscensionLore.kt.
+ *   v2 — Realistic book visual (spine + fore-edge), Y-axis spine-hinge opening,
+ *        3D page-turn graphicsLayer effect.
  */
 
 package com.example.missionuncomfortable.ui.ascension
@@ -75,6 +84,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -98,6 +108,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
@@ -109,6 +120,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.missionuncomfortable.ui.dashboard.Rank
 import kotlinx.coroutines.delay
+import kotlin.math.abs
 import kotlin.math.sin
 import kotlin.random.Random
 
@@ -320,8 +332,20 @@ private fun EmberParticles(color: Color) {
 
 /**
  * ClosedBookScene — shows the closed book with a breathing glow, and (when
- * [isOpening] is true) plays the hinge-open animation before calling
+ * [isOpening] is true) plays the spine-hinge open animation before calling
  * [onOpenAnimationComplete].
+ *
+ * The book is composed of three horizontal strips in a Row:
+ *   • Spine  — a narrow dark gradient strip on the left with a rounded left edge,
+ *              representing the bound spine of the book.
+ *   • Cover  — the main face of the book: sigil, glow halo, and title.
+ *   • Fore-edge — a Canvas on the right drawing ~60 thin horizontal lines in the
+ *              rank's accent colour, simulating the visible stacked page leaves.
+ *
+ * Opening animation: rotationY from 0 → -90 degrees, hinged on the LEFT edge
+ * via TransformOrigin(0f, 0.5f) — exactly how a real book's cover swings open
+ * away from the spine. At -90 the cover is edge-on (invisible), which signals
+ * the transition to READING.
  *
  * @param lore                       This rank's lore + theme.
  * @param isOpening                  True once the user has tapped the book.
@@ -349,12 +373,14 @@ private fun ClosedBookScene(
         label = "ClosedBookGlowAlpha"
     )
 
-    // ── HINGE-OPEN ROTATION ────────────────────────────────────────────────────
-    // rotationX from 0 (flat, facing the viewer) to -115 degrees (swung open,
-    // like a book cover falling open away from the reader). cameraDistance is
-    // increased so the 3D perspective doesn't distort/clip at steep angles.
+    // ── SPINE-HINGE ROTATION ───────────────────────────────────────────────────
+    // rotationY from 0 (flat, facing the viewer) to -90 degrees (edge-on, cover
+    // has swung fully open). TransformOrigin(0f, 0.5f) pivots on the LEFT edge
+    // of the composable — the spine — so the cover swings away to the right,
+    // exactly like opening a real book. At -90 the cover is invisible (edge-on),
+    // which is when we transition to READING.
     val openRotation by animateFloatAsState(
-        targetValue = if (isOpening) -115f else 0f,
+        targetValue = if (isOpening) -90f else 0f,
         animationSpec = tween(durationMillis = 900),
         label = "BookOpenRotation",
         finishedListener = {
@@ -367,7 +393,8 @@ private fun ClosedBookScene(
     // the halfway point — sells the "light was inside all along" beat.
     // Derived directly from openRotation so it is perfectly in sync with the
     // cover animation with no separate timer needed.
-    val openProgress = (openRotation / -115f).coerceIn(0f, 1f)
+    // openProgress: 0 = fully closed, 1 = fully open (edge-on at -90 degrees).
+    val openProgress = (openRotation / -90f).coerceIn(0f, 1f)
     val flashAlpha = when {
         openProgress < 0.35f -> 0f
         openProgress < 0.65f -> (openProgress - 0.35f) / 0.30f          // ramp up
@@ -382,71 +409,167 @@ private fun ClosedBookScene(
         Column(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // ── BOOK COVER ─────────────────────────────────────────────────────
-            // A rounded rectangle "cover" bearing the rank's sigil and book title,
-            // sitting on a darker "spine" rectangle behind it for a layered-book look.
-            Box(
+            // ── BOOK BODY — three strips: spine | cover | fore-edge ────────────
+            // The entire Row is wrapped in graphicsLayer so all three strips
+            // rotate together as a single rigid book object. The hinge is the
+            // LEFT edge of the Row (TransformOrigin x=0f), matching the spine
+            // strip — so the cover swings away from the spine correctly.
+            Row(
                 modifier = Modifier
                     .graphicsLayer {
-                        rotationX = openRotation
-                        cameraDistance = 14 * density   // Reduces perspective distortion at steep angles
-                        // Pivot the rotation from the TOP edge of the cover, like a real
-                        // hinge, rather than the default centre pivot.
-                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f)
-                        alpha = 1f - (openProgress * 0.85f)   // Cover fades as it swings open
+                        rotationY = openRotation
+                        // Increased camera distance reduces perspective distortion
+                        // at steep angles, keeping the cover readable mid-swing.
+                        cameraDistance = 14 * density
+                        // Pivot on the LEFT edge, vertically centred — the spine hinge.
+                        // This means the left side of the book stays fixed while the
+                        // right side swings away, exactly like a real book opening.
+                        transformOrigin = TransformOrigin(0f, 0.5f)
+                        // Fade the cover out as it approaches edge-on; at fully open
+                        // the cover is invisible and READING begins immediately after.
+                        alpha = 1f - (openProgress * 0.85f)
                     }
-                    .size(width = 220.dp, height = 300.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                lore.theme.mistColor,
-                                Color(0xFF0A0A0A)
-                            )
-                        )
-                    )
+                    .height(300.dp)
                     .clickable(enabled = !isOpening, onClick = onTap),
-                contentAlignment = Alignment.Center
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Glow halo behind the sigil — breathes while closed.
+                // ── SPINE STRIP ────────────────────────────────────────────────
+                // A narrow dark gradient strip representing the book's spine.
+                // Rounded only on the left edge so it merges seamlessly into
+                // the cover face on the right.
                 Box(
                     modifier = Modifier
-                        .size(140.dp)
+                        .width(20.dp)
+                        .fillMaxHeight()
+                        .clip(
+                            RoundedCornerShape(
+                                topStart = 10.dp,
+                                bottomStart = 10.dp,
+                                topEnd = 0.dp,
+                                bottomEnd = 0.dp
+                            )
+                        )
                         .background(
-                            Brush.radialGradient(
+                            Brush.horizontalGradient(
                                 colors = listOf(
-                                    lore.theme.accentColor.copy(alpha = breathingAlpha * 0.5f),
-                                    Color.Transparent
+                                    Color(0xFF050505),        // darkest at the very left edge
+                                    lore.theme.mistColor      // subtly lighter toward the cover
                                 )
-                            ),
-                            shape = CircleShape
+                            )
                         )
                 )
 
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    // ── SIGIL ──────────────────────────────────────────────────
-                    Text(
-                        text = lore.theme.sigil,
-                        fontSize = 44.sp,
-                        color = lore.theme.accentColor
+                // ── COVER FACE ─────────────────────────────────────────────────
+                // The main visible face of the book: the sigil, glow halo, and
+                // title text. No rounding on the left (flush with spine) or right
+                // (flush with fore-edge) edges — only top and bottom right rounded.
+                Box(
+                    modifier = Modifier
+                        .width(200.dp)
+                        .fillMaxHeight()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    lore.theme.mistColor,
+                                    Color(0xFF0A0A0A)
+                                )
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Glow halo behind the sigil — breathes while closed.
+                    Box(
+                        modifier = Modifier
+                            .size(140.dp)
+                            .background(
+                                Brush.radialGradient(
+                                    colors = listOf(
+                                        lore.theme.accentColor.copy(alpha = breathingAlpha * 0.5f),
+                                        Color.Transparent
+                                    )
+                                ),
+                                shape = CircleShape
+                            )
                     )
 
-                    Spacer(modifier = Modifier.height(18.dp))
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        // ── SIGIL ──────────────────────────────────────────────
+                        Text(
+                            text = lore.theme.sigil,
+                            fontSize = 44.sp,
+                            color = lore.theme.accentColor
+                        )
 
-                    // ── BOOK TITLE (engraved on the cover) ────────────────────
-                    Text(
-                        text = lore.bookTitle,
-                        color = lore.theme.hotColor,
-                        fontSize = 15.sp,
-                        fontFamily = FontFamily.Serif,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 20.dp)
-                    )
+                        Spacer(modifier = Modifier.height(18.dp))
+
+                        // ── BOOK TITLE (engraved on the cover) ────────────────
+                        Text(
+                            text = lore.bookTitle,
+                            color = lore.theme.hotColor,
+                            fontSize = 15.sp,
+                            fontFamily = FontFamily.Serif,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 20.dp)
+                        )
+                    }
+                }
+
+                // ── FORE-EDGE STRIP ────────────────────────────────────────────
+                // A Canvas drawing ~60 thin horizontal lines to simulate the
+                // visible stacked page leaves on the right edge of a closed book.
+                // Lines are drawn in the rank's accent colour so each book's
+                // page-edge reflects its own theme — a quiet detail.
+                Canvas(
+                    modifier = Modifier
+                        .width(18.dp)
+                        .fillMaxHeight()
+                        .clip(
+                            RoundedCornerShape(
+                                topStart = 0.dp,
+                                bottomStart = 0.dp,
+                                topEnd = 6.dp,
+                                bottomEnd = 6.dp
+                            )
+                        )
+                        .background(Color(0xFF111111))   // Dark base so lines read clearly
+                ) {
+                    val lineCount = 60
+                    val lineColor = lore.theme.accentColor.copy(alpha = 0.35f)
+                    val spacing = size.height / lineCount
+
+                    // Draw each line as a horizontal stroke across the full width
+                    // of the Canvas, spaced evenly from top to bottom.
+                    for (i in 0 until lineCount) {
+                        val y = i * spacing + spacing * 0.5f
+                        drawLine(
+                            color = lineColor,
+                            start = Offset(0f, y),
+                            end = Offset(size.width, y),
+                            strokeWidth = 1f
+                        )
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(28.dp))
+            // ── SOFT DROP SHADOW ──────────────────────────────────────────────
+            // A subtle radial smear beneath the book that pulses with the
+            // breathing glow — grounds the book in the scene.
+            Box(
+                modifier = Modifier
+                    .width(240.dp)
+                    .height(18.dp)
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                lore.theme.accentColor.copy(alpha = breathingAlpha * 0.3f),
+                                Color.Transparent
+                            )
+                        )
+                    )
+            )
+
+            Spacer(modifier = Modifier.height(18.dp))
 
             // ── "TAP TO OPEN" HINT ───────────────────────────────────────────────
             // Fades away once opening begins so it never overlaps the flash/pager.
@@ -487,6 +610,11 @@ private fun ClosedBookScene(
  * StoryReader — the swipeable book interior: a title page, one page per lore
  * paragraph, and a final closing page with the "CLOSE THE BOOK" button.
  *
+ * Each page receives a graphicsLayer rotationY driven by its distance from the
+ * current page in the pager, so dragging between pages produces a 3D page-turn
+ * effect — the leaving page rotates away and the arriving page rotates in,
+ * mimicking the physical motion of turning a book leaf.
+ *
  * @param lore         This rank's lore + theme.
  * @param rank         The achieved Rank (used for the title page subtitle).
  * @param onCloseBook  Called when the user taps "CLOSE THE BOOK" on the final page.
@@ -505,9 +633,31 @@ private fun StoryReader(lore: AscensionLore, rank: Rank, onCloseBook: () -> Unit
                 state = pagerState,
                 modifier = Modifier.fillMaxSize()
             ) { pageIndex ->
+                // ── 3D PAGE-TURN EFFECT ────────────────────────────────────────
+                // pageOffset is the signed distance of this page from the current
+                // visible page, including the live drag fraction. At rest it is 0f
+                // for the current page, +1f for the next, -1f for the previous.
+                // Multiplied by 80 degrees it gives a convincing page-curl arc
+                // without over-rotating into an illegible angle.
+                val pageOffset = (pageIndex - pagerState.currentPage).toFloat() -
+                        pagerState.currentPageOffsetFraction
+                val absOffset = abs(pageOffset)
+
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .graphicsLayer {
+                            // Rotate each page around the Y axis proportional to
+                            // its drag offset — pages sweep in and out like leaves.
+                            rotationY = pageOffset * 80f
+                            // Increased camera distance prevents the 3D rotation
+                            // from producing extreme perspective distortion at the
+                            // edges of each page-turn arc.
+                            cameraDistance = 20 * density
+                            // Fade pages slightly as they swing away so the
+                            // transition reads as depth, not just flat rotation.
+                            alpha = 1f - (absOffset * 0.25f).coerceIn(0f, 1f)
+                        }
                         .padding(horizontal = 32.dp, vertical = 56.dp),
                     contentAlignment = Alignment.Center
                 ) {
