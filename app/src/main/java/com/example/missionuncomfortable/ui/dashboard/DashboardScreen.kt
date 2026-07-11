@@ -904,9 +904,9 @@ private fun MissionCard(
         //   3. No alternate found: edge case, no compatible mission in the list.
         val blockedReason = when {
             mission.difficulty >= 3 ->
-                "Skipping is forbidden.\n\nThis mission is difficult — and that is exactly the point. " +
+                "Skipping forbidden.\n\n" +
                         "Missions at difficulty 3 and above cannot be swapped out. " +
-                        "Discomfort is the whole game. Face it."
+                        "Face it."
             hasSwappedToday ->
                 "You have already used your swap for today. Come back tomorrow with a fresh mission."
             else ->
