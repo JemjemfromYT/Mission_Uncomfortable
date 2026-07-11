@@ -190,7 +190,8 @@ import androidx.compose.ui.unit.sp                                  // Scale-ind
 import androidx.compose.runtime.livedata.observeAsState             // Bridges LiveData → Compose State
 import androidx.lifecycle.viewmodel.compose.viewModel               // Gets or creates a ViewModel scoped to this composable
 import kotlin.math.roundToInt                                       // Accurate Float-to-Int rounding for the discomfort slider
-import androidx.compose.ui.platform.LocalContext                    // Provides the Android Context inside a composable
+// LocalContext import removed — dashboard BGM is now managed at NavGraph level so the
+// player survives tab switches (History / Stats). See NavGraph.kt for the audio call.
 // Admin panel — secret testing overlay (v7: new).
 // Activation: tap the rank badge 7 times rapidly on the Dashboard.
 import com.example.missionuncomfortable.ui.admin.AdminPanel
@@ -257,16 +258,11 @@ fun DashboardScreen(
     // The `?: DashboardUiState()` provides a safe default while the first value arrives.
     val uiState by viewModel.uiState.observeAsState(DashboardUiState())
 
-    // ── DASHBOARD BGM ──────────────────────────────────────────────────────────
-    // Plays the rank-appropriate looping background track while the dashboard is
-    // visible. Switches automatically when the rank changes. Stops and releases
-    // all resources when this composable leaves the tree (e.g. when the
-    // Ascension Book screen opens). Defaults to Observer BGM (rank 1) during
-    // the brief loading window before xpProgress arrives.
-    rememberDashboardAudio(
-        context   = LocalContext.current,
-        rankLevel = uiState.xpProgress?.currentRank?.level ?: 1
-    )
+    // ── NOTE: Dashboard BGM has been hoisted to NavGraph.kt ───────────────────
+    // rememberDashboardAudio() was previously called here. It has been moved up
+    // to MissionNavGraph so the MediaPlayer survives tab switches (History / Stats).
+    // When this composable leaves the tree, the player is NOT released — it stays
+    // alive at the NavGraph level and simply continues playing on the other tabs.
 
     // ── v10: RANK-UP NAVIGATION ────────────────────────────────────────────────
     // When the ViewModel fires a rank-up event (rankUpEvent != null),

@@ -120,6 +120,15 @@
  *            Changed remember(navController) → remember(backStackEntry).
  *
  *   v3 — Added ascension route for AscensionBookScreen.
+ *
+ *   v7 — Hoisted rememberDashboardAudio() from DashboardScreen to MissionNavGraph.
+ *        Root cause of BGM dropping on History/Stats tab: DashboardScreen leaves the
+ *        composition tree on tab switch, firing DisposableEffect.onDispose() and
+ *        releasing the MediaPlayer. Fix: call rememberDashboardAudio() at NavGraph
+ *        level where it is never removed during tab navigation. An `active` flag
+ *        (= showBottomNav) silences the player on welcome/rankup/ascension without
+ *        destroying it. rankForBgm (mutableStateOf) is updated by a LaunchedEffect
+ *        inside the dashboard composable block whenever the rank changes.
  *        Null-guards in rankup and ascension use LaunchedEffect for popBackStack()
  *        instead of calling it directly in the composable body (which could misfire
  *        during the exit animation and pop the wrong entry).
@@ -212,9 +221,13 @@ import androidx.compose.material3.Text                                  // Text 
 import androidx.compose.runtime.Composable                              // Marks a composable function
 import androidx.compose.runtime.LaunchedEffect                          // Side-effect that runs outside composition
 import androidx.compose.runtime.getValue                                // Property delegate for State
+import androidx.compose.runtime.mutableStateOf                          // Observable mutable state holder
 import androidx.compose.runtime.remember                                // Keeps value across recompositions
+import androidx.compose.runtime.setValue                                // Property delegate for mutable State
+import androidx.compose.runtime.livedata.observeAsState                 // Bridges LiveData → Compose State
 import androidx.compose.ui.Modifier                                     // Modifier chain
 import androidx.compose.ui.graphics.Color                               // Colour class
+import androidx.compose.ui.platform.LocalContext                        // Android Context inside a composable
 import androidx.compose.ui.res.painterResource                          // Loads a drawable resource
 import androidx.compose.ui.text.font.FontWeight                         // Bold, SemiBold, etc.
 import androidx.compose.ui.unit.dp                                      // Density-independent pixels
@@ -228,7 +241,9 @@ import androidx.navigation.compose.currentBackStackEntryAsState         // Obser
 import androidx.navigation.compose.rememberNavController                // Creates and remembers a NavController
 import com.example.missionuncomfortable.ui.ascension.AscensionBookScreen // Full-screen ascension storybook
 import com.example.missionuncomfortable.ui.dashboard.DashboardScreen   // Mission dashboard screen
+import com.example.missionuncomfortable.ui.dashboard.DashboardUiState  // Default state for observeAsState
 import com.example.missionuncomfortable.ui.dashboard.DashboardViewModel // ViewModel for dashboard + rank-up
+import com.example.missionuncomfortable.ui.dashboard.rememberDashboardAudio // Ambient BGM composable
 import com.example.missionuncomfortable.ui.history.HistoryScreen        // Mission history screen
 import com.example.missionuncomfortable.ui.rankup.RankUpScreen          // Full-screen rank-up celebration
 import com.example.missionuncomfortable.ui.stats.StatsScreen            // Stats bar-chart screen
@@ -341,6 +356,31 @@ fun MissionNavGraph(startDestination: String) {
         Routes.STATS
     )
 
+    // ── AMBIENT BGM STATE ──────────────────────────────────────────────────────
+    // rankForBgm persists at NavGraph level — it is updated by the dashboard
+    // composable block below whenever the ViewModel reports a rank change.
+    // It starts at 1 (Observer BGM) and reflects the user's actual rank as soon
+    // as uiState loads. It never resets on tab switches because it lives here,
+    // not inside DashboardScreen.
+    var rankForBgm by remember { mutableStateOf(1) }
+
+    // ── AMBIENT BGM PLAYER ─────────────────────────────────────────────────────
+    // Called UNCONDITIONALLY — always in the composition tree regardless of tab.
+    // This is what keeps the MediaPlayer alive when the user switches to History
+    // or Stats: the composable never leaves the tree, so DisposableEffect never
+    // fires onDispose, and the player never stops.
+    //
+    // active = showBottomNav means:
+    //   • On Mission / History / Stats  → volume 0.45f  → audible
+    //   • On welcome / rankup / ascension → volume 0f  → silenced
+    // The player is NOT released when active becomes false — just muted. This
+    // means audio resumes instantly on return with no prepareAsync() gap.
+    rememberDashboardAudio(
+        context   = LocalContext.current,
+        rankLevel = rankForBgm,
+        active    = showBottomNav
+    )
+
     // ── SCAFFOLD ───────────────────────────────────────────────────────────────
     Scaffold(
         containerColor = Color(0xFF0D0D0D),  // Near-black — same as ColorBackground across the app
@@ -448,6 +488,25 @@ fun MissionNavGraph(startDestination: String) {
                     slideOutHorizontally(animationSpec = tween(SLIDE_DURATION_MS)) { -it }
                 }
             ) {
+                // ── RANK SYNC FOR BGM ──────────────────────────────────────────
+                // The ambient BGM lives at NavGraph level (see rememberDashboardAudio
+                // above) and needs to know the user's current rank. We read the
+                // DashboardViewModel here — inside the composable block where its
+                // ViewModelStoreOwner scope is the "dashboard" back stack entry —
+                // and propagate any rank change up to rankForBgm via LaunchedEffect.
+                //
+                // viewModel() here returns the SAME instance as the one inside
+                // DashboardScreen, because both calls share the same back stack
+                // entry scope. No duplicate ViewModel is created.
+                //
+                // LaunchedEffect key = currentRank?.level: only fires when the
+                // rank value actually changes (rank-up), not on every recomposition.
+                val dashVm: DashboardViewModel = viewModel()
+                val dashUiState by dashVm.uiState.observeAsState(DashboardUiState())
+                LaunchedEffect(dashUiState.xpProgress?.currentRank?.level) {
+                    dashUiState.xpProgress?.currentRank?.level?.let { rankForBgm = it }
+                }
+
                 DashboardScreen(
                     onNavigateToRankUp = {
                         navController.navigate(Routes.RANKUP) {

@@ -36,10 +36,15 @@
  *
  * ─── HOW TO INTEGRATE ────────────────────────────────────────────────────────
  *
- * In your DashboardScreen composable, add ONE line at the top of the function
- * body (after val context = LocalContext.current):
+ * Call this in MissionNavGraph (NavGraph.kt) — NOT in DashboardScreen. Placing it
+ * at the NavGraph level means the player lives for the entire tab session, so
+ * switching to History or Stats does not destroy and recreate the MediaPlayer.
  *
- *   rememberDashboardAudio(context = LocalContext.current, rankLevel = rank.level)
+ *   rememberDashboardAudio(
+ *       context   = LocalContext.current,
+ *       rankLevel = rankForBgm,          // state var kept at NavGraph level
+ *       active    = showBottomNav        // false on welcome/rankup/ascension
+ *   )
  *
  * That's it. The composable manages its own lifecycle — no manual start/stop.
  *
@@ -52,6 +57,11 @@
  * v1 — Initial implementation. prepareAsync() + setOnPreparedListener so the
  *      MediaPlayer never blocks the main/composition thread. Auto-releases via
  *      DisposableEffect. Switches track instantly when rankLevel changes.
+ * v2 — Added [active] parameter. The player now lives at NavGraph level so it
+ *      survives History / Stats tab switches. When active=false (welcome, rankup,
+ *      ascension screens) the volume is clamped to 0f so the BGM is silenced
+ *      without destroying and recreating the MediaPlayer. setVolume() is safe to
+ *      call in any MediaPlayer state, including PREPARING.
  */
 
 package com.example.missionuncomfortable.ui.dashboard
@@ -95,25 +105,37 @@ private fun bgmResIdForRank(rankLevel: Int): Int = when (rankLevel) {
  *
  * ── Behaviour ────────────────────────────────────────────────────────────────
  * • Starts automatically — no manual call needed.
- * • Loops indefinitely at 45% volume (ambient, not distracting).
+ * • Loops indefinitely at 45% volume when [active] is true.
+ * • Instantly silenced (volume 0) when [active] is false — the player is NOT
+ *   released, so it can resume immediately when [active] returns to true.
  * • Switches track instantly when [rankLevel] changes (e.g. after a rank-up).
- * • Stops and releases resources as soon as the composable leaves the tree
- *   (e.g. when the Ascension Book screen appears) via DisposableEffect.
+ * • Releases resources when the composable leaves the tree via DisposableEffect.
+ *
+ * ── Why active instead of removing the call ──────────────────────────────────
+ * This composable lives in MissionNavGraph (above the tab routes). It is NEVER
+ * removed from the composition tree during tab switches. The [active] flag lets
+ * us silence the player on screens that should be quiet (welcome, rankup,
+ * ascension) without destroying and recreating the MediaPlayer — which would
+ * cause a brief startup gap on return.
  *
  * ── Thread safety ────────────────────────────────────────────────────────────
  * prepareAsync() is called instead of prepare() so the MediaPlayer's internal
  * system thread handles buffering — the main/composition thread is never
  * blocked. setOnPreparedListener fires on that thread when ready and calls
- * start() automatically.
+ * start() automatically. setVolume() is safe in any MediaPlayer state,
+ * including PREPARING, so active changes never throw.
  *
  * @param context    Android context for resource loading. Pass LocalContext.current.
  * @param rankLevel  Current rank level (1–5). Changes trigger a track switch.
+ * @param active     True when BGM should be audible (Mission / History / Stats tabs).
+ *                   False on welcome, rankup, and ascension screens.
  */
 @Composable
-fun rememberDashboardAudio(context: Context, rankLevel: Int) {
+fun rememberDashboardAudio(context: Context, rankLevel: Int, active: Boolean = true) {
 
     // remember(rankLevel) destroys and recreates the player whenever the rank
-    // changes, which naturally switches the track.
+    // changes, which naturally switches the track. The initial volume respects
+    // the current active state so the player is never audible when it shouldn't be.
     val player = remember(rankLevel) {
         runCatching {
             MediaPlayer().apply {
@@ -136,7 +158,13 @@ fun rememberDashboardAudio(context: Context, rankLevel: Int) {
                 )
 
                 isLooping = true
-                setVolume(0.45f, 0.45f) // 45% — present but not overpowering
+
+                // Start at the correct volume for the current active state.
+                // If the player is created while active=false (e.g. rank changes
+                // during ascension), it starts silent and unmutes when active
+                // returns to true via the LaunchedEffect below.
+                val initialVol = if (active) 0.45f else 0f
+                setVolume(initialVol, initialVol)
 
                 // ── Non-blocking prepare ──────────────────────────────────────
                 // setOnPreparedListener fires on the MediaPlayer system thread
@@ -148,6 +176,16 @@ fun rememberDashboardAudio(context: Context, rankLevel: Int) {
         }.getOrNull()
         // getOrNull() means a missing or corrupt file produces null instead of
         // crashing. The screen still works; it's just silent.
+    }
+
+    // ── React to active changes ───────────────────────────────────────────────
+    // When the user navigates to welcome/rankup/ascension, active becomes false
+    // and the volume drops to 0 instantly (setVolume is safe in any state).
+    // When they return to a tab route, active becomes true and sound resumes
+    // without any gap — the player was running silently the whole time.
+    LaunchedEffect(active) {
+        if (active) player?.setVolume(0.45f, 0.45f)
+        else        player?.setVolume(0f, 0f)
     }
 
     // ── Lifecycle cleanup ─────────────────────────────────────────────────────
