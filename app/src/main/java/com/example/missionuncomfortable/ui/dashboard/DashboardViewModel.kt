@@ -9,9 +9,9 @@
  *
  * KEY FILES (read these for full context before making changes):
  *   DashboardModels.kt     — All enums + data classes (Mission, Rank, XpProgress, MissionCategory)
- *   MissionRepository.kt   — Full mission library: 25 missions, 5 XP tiers, 6 categories
+ *   MissionRepository.kt   — Full mission library: 40 missions, 5 XP tiers, 6 categories
  *   DashboardViewModel.kt  — All game logic: XP, streaks, rank-ups, history saving, core loop ← YOU ARE HERE
- *   DashboardScreen.kt     — Main UI. v5: SWAP MISSION button shows a popup, does NOT swap.
+ *   DashboardScreen.kt     — Main UI. v6: SWAP MISSION button is now real (difficulty-gated).
  *   HistoryModels.kt       — CompletedMissionEntry data class
  *   HistoryViewModel.kt    — Reads history from SharedPreferences JSON
  *   HistoryScreen.kt       — Scrollable mission history UI
@@ -48,7 +48,14 @@
  *   "total_xp"             → Int.   Total accumulated XP. Never reset.
  *   "last_completed_date"  → String "yyyy-MM-dd". Last date a mission was completed.
  *   "mission_status"       → String "ACTIVE" | "IN_PROGRESS" | "COMPLETED". Today's status.
- *   "mission_id_today"     → String. Mission id assigned today. Used to detect day rollover.
+ *   "mission_id_today"     → String. Mission id currently active today (original or swapped).
+ *   "mission_date_today"   → String "yyyy-MM-dd". The calendar date when mission_id_today was set.
+ *                            Used to detect a new day reliably, even when the user has swapped —
+ *                            the old isSameMission check (savedMissionId == today's mission ID)
+ *                            broke when the saved ID was a swapped mission's ID, not the repo's
+ *                            getMissionForToday() ID. A date comparison is unambiguous.
+ *   "has_swapped_today"    → Boolean. True if the user already used their one daily swap.
+ *                            Reset to false each new day in loadInitialData().
  *   "streak_count"         → Int.   Current consecutive-day streak.
  *   "last_streak_date"     → String "yyyy-MM-dd". Last date streak was updated.
  *   "best_streak"          → Int.   All-time best streak.
@@ -121,6 +128,26 @@
  *            - onAscensionBookDismissed() added — called when the user taps
  *              "CLOSE THE BOOK". Marks the rank's book as seen and clears
  *              ascensionEvent.
+ *
+ *   v4 — Real swap logic:
+ *            - alternateMission: Mission? added to UiState. Non-null when a valid
+ *              swap candidate exists within the allowed difficulty window for today's
+ *              mission. Null if no compatible mission exists or user already swapped.
+ *            - hasSwappedToday: Boolean added to UiState. True once the daily swap
+ *              is used. Prevents multi-swap exploitation.
+ *            - Two new SharedPreferences keys added:
+ *                KEY_MISSION_DATE     — "yyyy-MM-dd" the date mission_id_today was set.
+ *                KEY_HAS_SWAPPED_TODAY — Boolean flag for the daily swap limit.
+ *            - loadInitialData() redesigned: day-detection now uses KEY_MISSION_DATE
+ *              (date comparison) instead of mission-ID comparison. This is necessary
+ *              because after a swap the saved mission ID is the swapped mission's ID,
+ *              not getMissionForToday()'s ID — the old check incorrectly treated a
+ *              swap as a new day, resetting the swapped mission back to the original.
+ *            - onSwapMission() now performs a real mission swap:
+ *                1. Reads alternateMission from UiState.
+ *                2. Replaces todaysMission with it.
+ *                3. Saves the new mission ID and sets has_swapped_today = true.
+ *                4. Clears alternateMission (one swap per day).
  */
 
 package com.example.missionuncomfortable.ui.dashboard
@@ -184,7 +211,20 @@ data class DashboardUiState(
     //       (see onRankUpCelebrationComplete).
     // DashboardScreen shows AscensionBookScreen when this is non-null.
     // Cleared by onAscensionBookDismissed().
-    val ascensionEvent: Rank? = null
+    val ascensionEvent: Rank? = null,
+
+    // ── Swap State (v4) ────────────────────────────────────────────────────
+    // alternateMission: the precomputed swap candidate within the difficulty
+    // window [currentDifficulty-2, currentDifficulty]. Non-null means a swap
+    // is available right now. Null means: no compatible mission exists, or
+    // the user already swapped today, or the mission is no longer ACTIVE.
+    // Cleared to null once the swap is executed (one swap per day).
+    val alternateMission: Mission? = null,
+
+    // hasSwappedToday: true once the user has used their one daily swap.
+    // Displayed in DashboardScreen so the swap button knows to show a
+    // "already swapped" blocked message instead of a swap dialog.
+    val hasSwappedToday: Boolean = false
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -214,7 +254,17 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
         // Mission state persistence (Phase 3)
         const val KEY_MISSION_STATUS       = "mission_status"        // "ACTIVE" | "IN_PROGRESS" | "COMPLETED"
-        const val KEY_MISSION_ID           = "mission_id_today"      // today's mission id
+        const val KEY_MISSION_ID           = "mission_id_today"      // Active mission id (original or swapped)
+
+        // v4: Date-based day detection — replaces the old isSameMission (mission-ID) check.
+        // Reason: after a swap, KEY_MISSION_ID holds the swapped mission's ID, NOT the value
+        // returned by getMissionForToday(). The old check treated a swap as a new day, silently
+        // resetting the user's swapped mission back to the original on next launch. Using the
+        // calendar date avoids this ambiguity — a new day is simply a new yyyy-MM-dd string.
+        const val KEY_MISSION_DATE         = "mission_date_today"    // "yyyy-MM-dd" of current mission
+
+        // v4: One-swap-per-day limit
+        const val KEY_HAS_SWAPPED_TODAY    = "has_swapped_today"     // Boolean
 
         // Streak (Phase 4)
         const val KEY_STREAK_COUNT         = "streak_count"
@@ -245,59 +295,106 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     /**
      * loadInitialData — called once on init.
      *
-     * 1. Gets today's mission from MissionRepository.
-     * 2. Restores mission status from SharedPreferences (so IN_PROGRESS survives app kill).
-     * 3. Loads total XP and computes XpProgress.
-     * 4. Loads streak count.
-     * 5. Checks if today has already been completed.
-     * 6. (v3) Checks if the Observer's Ascension Book has ever been shown. If not,
+     * 1. Determines if we are on the same calendar day as the last saved mission.
+     *    v4: Uses KEY_MISSION_DATE (date string comparison) instead of mission-ID
+     *    comparison. The old isSameMission check (savedId == getMissionForToday().id)
+     *    broke when the saved ID was a swapped mission's ID — a date comparison is
+     *    unambiguous and survives swaps correctly.
+     *
+     * 2. If same day: restores the active mission (original or swapped) and its status.
+     * 3. If new day: resets status, swap flag, and uses getMissionForToday() for a fresh start.
+     * 4. Loads total XP, computes XpProgress.
+     * 5. Loads streak count.
+     * 6. v4: Computes the alternate swap mission from MissionRepository (null if already
+     *    swapped, mission not ACTIVE, or no compatible difficulty exists).
+     * 7. (v3) Checks if the Observer's Ascension Book has ever been shown. If not,
      *    sets ascensionEvent so it plays on this — the user's very first — visit.
      */
     private fun loadInitialData() {
         val todayString = today()
-        val mission     = MissionRepository.getMissionForToday()
+
+        // ── v4: DAY DETECTION via date string ──────────────────────────────────
+        // savedDate is the date string written when the current mission was assigned.
+        // If savedDate == todayString, we are on the same calendar day.
+        // If they differ, it is a new day and we reset.
+        val savedDate      = prefs.getString(KEY_MISSION_DATE, "") ?: ""
+        val savedMissionId = prefs.getString(KEY_MISSION_ID, "") ?: ""
+        val isSameDay      = savedDate == todayString
+
+        // ── Determine active mission and swap state ────────────────────────────
+        val activeMission: Mission
+        val hasSwappedToday: Boolean
+
+        if (isSameDay) {
+            // ── SAME DAY: restore the mission that was active when the app was last open ─
+            hasSwappedToday = prefs.getBoolean(KEY_HAS_SWAPPED_TODAY, false)
+
+            // Look up the mission by its saved ID. This might be the original day's mission
+            // OR a swapped mission — either way, find it by ID from the full library.
+            val foundMission = MissionRepository.ALL_MISSIONS.find { it.id == savedMissionId }
+                ?: MissionRepository.getMissionForToday()  // Fallback to today's if ID not found
+            activeMission = foundMission
+
+        } else {
+            // ── NEW DAY: reset all per-day state ───────────────────────────────
+            hasSwappedToday = false
+            activeMission   = MissionRepository.getMissionForToday()
+
+            // Persist the new day's baseline. Use commit() not apply() — Kotlin's
+            // generic apply { } extension conflicts with SharedPreferences.Editor.apply()
+            // when chained, causing a "Cannot infer type for T" compile error.
+            val editor = prefs.edit()
+            editor.putString(KEY_MISSION_STATUS, "ACTIVE")
+            editor.putString(KEY_MISSION_ID, activeMission.id)
+            editor.putString(KEY_MISSION_DATE, todayString)
+            editor.putBoolean(KEY_HAS_SWAPPED_TODAY, false)
+            editor.commit()
+        }
 
         // ── Restore mission status from SharedPreferences ─────────────────────
         // If the user backgrounded the app while a mission was IN_PROGRESS,
         // restore that state rather than showing ACCEPT again.
-        val savedStatus = prefs.getString(KEY_MISSION_STATUS, "ACTIVE")
-        val savedMissionId = prefs.getString(KEY_MISSION_ID, "")
-        val isSameMission = savedMissionId == mission.id   // Different mission = new day
-
-        val missionStatus = if (isSameMission) {
+        val savedStatus = prefs.getString(KEY_MISSION_STATUS, "ACTIVE") ?: "ACTIVE"
+        val missionStatus = if (isSameDay) {
             when (savedStatus) {
                 "IN_PROGRESS" -> MissionStatus.IN_PROGRESS
                 "COMPLETED"   -> MissionStatus.COMPLETED
                 else          -> MissionStatus.ACTIVE
             }
         } else {
-            // New day — reset status.
-            // Using commit() instead of apply() here and throughout this file.
-            // Reason: Kotlin's generic apply { } extension conflicts with
-            // SharedPreferences.Editor.apply() when chained, causing a
-            // "Cannot infer type for T" compile error.
-            val editor = prefs.edit()
-            editor.putString(KEY_MISSION_STATUS, "ACTIVE")
-            editor.putString(KEY_MISSION_ID, mission.id)
-            editor.commit()
+            // New day — always start ACTIVE.
             MissionStatus.ACTIVE
         }
 
-        val restoredMission = mission.copy(
+        val restoredMission = activeMission.copy(
             status       = missionStatus,
             dateAssigned = todayString
         )
 
         // ── Load XP ───────────────────────────────────────────────────────────
-        val totalXp  = prefs.getInt(KEY_TOTAL_XP, 0)
+        val totalXp    = prefs.getInt(KEY_TOTAL_XP, 0)
         val xpProgress = calculateXpProgress(totalXp)
 
         // ── Load streak ───────────────────────────────────────────────────────
         val streakCount = prefs.getInt(KEY_STREAK_COUNT, 0)
 
         // ── Check if today is already complete ────────────────────────────────
-        val lastCompleted = prefs.getString(KEY_LAST_COMPLETED_DATE, "")
         val isDailyComplete = missionStatus == MissionStatus.COMPLETED
+
+        // ── v4: COMPUTE ALTERNATE MISSION FOR SWAP ────────────────────────────
+        // Only compute if:
+        //   (a) the user has NOT already swapped today, AND
+        //   (b) the mission is still ACTIVE (can't swap after accepting or completing)
+        // getAlternateMission() returns null if no mission within the difficulty
+        // window [currentDifficulty-2, currentDifficulty] is found.
+        val alternateMission: Mission? = if (!hasSwappedToday && missionStatus == MissionStatus.ACTIVE) {
+            MissionRepository.getAlternateMission(activeMission.difficulty)?.copy(
+                status       = MissionStatus.ACTIVE,
+                dateAssigned = todayString
+            )
+        } else {
+            null  // No swap available — either already swapped, or mission is in progress/complete
+        }
 
         // ── v3: FIRST-EVER-LAUNCH ASCENSION BOOK (The Observer) ────────────────
         // The user starts at Level 1 (Observer) with no rank-up event ever firing
@@ -318,7 +415,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             xpProgress            = xpProgress,
             streakCount           = streakCount,
             // v3: non-null only on the user's very first ever dashboard load.
-            ascensionEvent        = if (shouldShowObserverBook) observerRank else null
+            ascensionEvent        = if (shouldShowObserverBook) observerRank else null,
+            // v4: precomputed swap candidate (null if swap unavailable)
+            alternateMission      = alternateMission,
+            hasSwappedToday       = hasSwappedToday
         )
     }
 
@@ -332,6 +432,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
      * Transitions mission from ACTIVE → IN_PROGRESS.
      * Persists the new status to SharedPreferences.
      * Shows the return buttons ("I DID IT" / "I COULDN'T DO IT").
+     *
+     * v4: Also clears alternateMission — once the user has accepted the mission,
+     * swapping is no longer an option (they already committed).
      */
     fun onAcceptMission() {
         val current = _uiState.value ?: return
@@ -345,8 +448,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         editor.commit()
 
         _uiState.value = current.copy(
-            todaysMission     = mission.copy(status = MissionStatus.IN_PROGRESS),
-            showReturnButtons = true
+            todaysMission    = mission.copy(status = MissionStatus.IN_PROGRESS),
+            showReturnButtons = true,
+            // v4: Clear alternate — can't swap once the mission is IN_PROGRESS
+            alternateMission = null
         )
     }
 
@@ -371,6 +476,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
      * so the user can try again today.
      *
      * A compassionate response — not punitive. The user can try again.
+     *
+     * v4: Restores the alternateMission if the user hadn't swapped yet — they
+     * abandoned the mission and can now swap if they want to try a different one.
      */
     fun onMissionAbandoned() {
         val current = _uiState.value ?: return
@@ -380,10 +488,23 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         editor.putString(KEY_MISSION_STATUS, "ACTIVE")
         editor.commit()
 
+        // v4: Recompute the alternate in case we need to re-offer the swap button.
+        // This handles the case where the user accepted → abandoned → wants to swap.
+        val todayString = today()
+        val restoredAlternate: Mission? = if (!current.hasSwappedToday) {
+            MissionRepository.getAlternateMission(mission.difficulty)?.copy(
+                status       = MissionStatus.ACTIVE,
+                dateAssigned = todayString
+            )
+        } else {
+            null   // Already swapped today — no second swap offered
+        }
+
         _uiState.value = current.copy(
-            todaysMission     = mission.copy(status = MissionStatus.ACTIVE),
-            showReturnButtons = false,
-            showReflectionSlider = false
+            todaysMission        = mission.copy(status = MissionStatus.ACTIVE),
+            showReturnButtons    = false,
+            showReflectionSlider = false,
+            alternateMission     = restoredAlternate   // v4: restore swap option if not yet used
         )
     }
 
@@ -467,7 +588,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             isPersonalBest       = isPersonalBest,
             // Phase 7: set rankUpEvent if ranked up; otherwise mark complete immediately
             rankUpEvent          = if (didRankUp) newXpProgress.currentRank else null,
-            isDailyComplete      = !didRankUp   // Deferred to after celebration if ranked up
+            isDailyComplete      = !didRankUp,   // Deferred to after celebration if ranked up
+            // Swap is irrelevant once the mission is completed — clear it.
+            alternateMission     = null
         )
     }
 
@@ -528,16 +651,44 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /**
-     * onSwapMission — user tapped the SWAP MISSION button.
+     * onSwapMission — user confirmed the swap in SwapConfirmDialog.
      *
-     * NOTE: In DashboardScreen v5, the SWAP MISSION button shows a motivational
-     * popup (SwapBlockedDialog) instead of calling this function. This function
-     * is retained for when swapping is re-enabled in a future version.
+     * v4 UPDATE: This function now performs a real mission swap.
+     *
+     * Pre-condition: uiState.alternateMission must be non-null (the Screen only calls
+     * this after verifying alternateMission != null in the swap confirmation dialog).
+     * If called when alternateMission is null, this is a no-op (defensive).
+     *
+     * What happens:
+     *   1. Reads the precomputed alternateMission from UiState.
+     *   2. Replaces todaysMission with the alternate.
+     *   3. Saves the new mission ID to SharedPreferences (KEY_MISSION_ID), so the
+     *      swapped mission is correctly restored on the next app launch.
+     *   4. Sets KEY_HAS_SWAPPED_TODAY = true to enforce the one-swap-per-day limit.
+     *   5. Clears alternateMission in UiState (prevents a second swap attempt).
+     *   6. Sets hasSwappedToday = true in UiState.
+     *
+     * Note: KEY_MISSION_DATE is NOT updated — the date was set when the original
+     * mission was assigned and does not change on swap. This correctly preserves the
+     * "same day" detection so the swapped mission is restored instead of the original
+     * on next launch.
      */
     fun onSwapMission() {
-        // Swapping is currently blocked at the UI level (DashboardScreen v5).
-        // This function is a no-op until swapping is re-enabled.
-        // Future: fetch MissionRepository.getAlternateMission() and update state.
+        val current   = _uiState.value ?: return
+        val alternate = current.alternateMission ?: return  // Safety: no swap if no alternate
+
+        // Persist the swapped mission ID and the swap flag
+        val editor = prefs.edit()
+        editor.putString(KEY_MISSION_ID, alternate.id)
+        editor.putString(KEY_MISSION_STATUS, "ACTIVE")   // Swapped mission starts ACTIVE
+        editor.putBoolean(KEY_HAS_SWAPPED_TODAY, true)
+        editor.commit()
+
+        _uiState.value = current.copy(
+            todaysMission    = alternate,
+            alternateMission = null,       // One swap per day — no further swaps
+            hasSwappedToday  = true
+        )
     }
 
     /**

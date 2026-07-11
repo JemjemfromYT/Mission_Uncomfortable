@@ -43,6 +43,17 @@
  *   LoadingScreen()              — Shown while data is loading.
  *   ErrorScreen()                — Shown if something went wrong loading data.
  *
+ *   SwapConfirmDialog()          — NEW (v6). AlertDialog shown when the user taps SWAP MISSION
+ *                                  and a compatible alternate mission exists. Shows the alternate
+ *                                  mission's title and difficulty, with SWAP / STAY buttons.
+ *
+ *   SwapBlockedDialog()          — Shows when the user taps SWAP MISSION but cannot swap.
+ *                                  v5: Original version — showed "Skipping is forbidden" with no
+ *                                  alternative available (SWAP button was always blocked).
+ *                                  v6: Updated — now shows the specific reason why swap is blocked:
+ *                                  either "no compatible difficulty" or "already swapped today".
+ *                                  The swap button only routes here when swap is genuinely unavailable.
+ *
  * ─── DESIGN AESTHETIC ────────────────────────────────────────────────────────
  *
  *   Dark, minimal, stoic.
@@ -67,8 +78,6 @@
  *
  *   - Replace placeholder data in DashboardViewModel with Room DAO calls.
  *   - Add swipe-to-refresh (PullRefreshIndicator) once real networking is in place.
- *   - Implement onSwapMission() in the ViewModel with real Supabase alternative-mission fetch.
- *   - Enforce a daily swap limit (one swap per day) in the ViewModel.
  *   - Replace DailyCompleteScreen with a dedicated MissionCompleteScreen (NavController route)
  *     showing streak count, discomfort history chart, and next-day preview.
  *
@@ -119,6 +128,22 @@
  *          4. The onSwapMission parameter is kept in all composable signatures for
  *             future use (e.g., if you later want to allow swaps after a penalty,
  *             or after watching an ad), but it is NOT called from the button.
+ *
+ *   v6 — REAL SWAP LOGIC (difficulty-gated):
+ *          1. MissionCard now accepts alternateMission: Mission? and hasSwappedToday: Boolean.
+ *             These values come from DashboardUiState and are passed through DashboardContent.
+ *          2. When the user taps SWAP MISSION:
+ *               - If alternateMission != null (a compatible mission exists within difficulty
+ *                 window [currentD-2, currentD]) → show SwapConfirmDialog.
+ *               - If alternateMission == null (no compatible mission, or already swapped) →
+ *                 show SwapBlockedDialog with the reason ("already swapped" or "no match").
+ *          3. SwapConfirmDialog added (new in v6): shows the alternate mission's title and
+ *             difficulty. Has "SWAP" (calls onSwapMission) and "STAY" (dismisses) buttons.
+ *          4. SwapBlockedDialog updated (v6): now accepts a reason string so the message is
+ *             contextual, not generic. "Already swapped" feels different from "No compatible
+ *             mission" — the user deserves to know which situation they're in.
+ *          5. onSwapMission parameter is now actually called (via SwapConfirmDialog's confirm).
+ *             In DashboardScreen root, it calls viewModel.onSwapMission().
  *
  *   v10 — Phase 8 (Navigation): added onNavigateToRankUp parameter and LaunchedEffect.
  *          When the ViewModel fires a rank-up event (uiState.rankUpEvent != null),
@@ -344,12 +369,15 @@ fun DashboardScreen(
                         todaysMission = uiState.todaysMission!!,
                         showReflectionSlider = uiState.showReflectionSlider,
                         currentDiscomfortRating = uiState.currentDiscomfortRating,
+                        // v6: Pass swap state so MissionCard can decide which dialog to show
+                        alternateMission = uiState.alternateMission,
+                        hasSwappedToday  = uiState.hasSwappedToday,
                         onMissionClicked = {
                             viewModel.onMissionCardClicked()     // Notify ViewModel user tapped the card
                             onMissionClicked()                   // Trigger navigation from the caller
                         },
                         onAcceptMission = { viewModel.onAcceptMission() },
-                        onSwapMission = { viewModel.onSwapMission() },
+                        onSwapMission   = { viewModel.onSwapMission() },   // v6: now actually swaps
                         onMissionDone = { viewModel.onMissionDone() },           // v6: "I DID IT"
                         onMissionAbandoned = { viewModel.onMissionAbandoned() }, // v6: "I COULDN'T DO IT"
                         onDiscomfortRatingChanged = { rating -> viewModel.onDiscomfortRatingChanged(rating) },
@@ -387,17 +415,20 @@ fun DashboardScreen(
  *
  * v3: Added onViewCompletion parameter and passes it down to MissionCard.
  * v6: Added onMissionDone and onMissionAbandoned for the IN_PROGRESS return flow.
+ *     Added alternateMission and hasSwappedToday for the real swap feature.
  *
  * @param xpProgress               The XP and rank progress data to display.
  * @param todaysMission            The mission assigned to the user today.
  * @param showReflectionSlider     True when the discomfort slider should be shown in the card.
  * @param currentDiscomfortRating  The live slider position (1–10) before submission.
+ * @param alternateMission         v6: Precomputed swap candidate. Non-null if a compatible mission
+ *                                 exists within [currentDifficulty-2, currentDifficulty]. Null means
+ *                                 no swap is available (already swapped or no difficulty match).
+ * @param hasSwappedToday          v6: True if the user already used their one daily swap.
+ *                                 Used to show the correct blocked-dialog reason.
  * @param onMissionClicked         Called when the user taps the card area (for future navigation).
  * @param onAcceptMission          Called when the user taps "ACCEPT THE MISSION".
- * @param onSwapMission            Called when the user taps "SWAP MISSION".
- *                                 NOTE (v5): The SWAP MISSION button no longer calls this directly.
- *                                 Instead, it shows a motivational popup (SwapBlockedDialog).
- *                                 This parameter is kept for future use (e.g., allow swap after a penalty).
+ * @param onSwapMission            v6: Now actually called when user confirms a swap in the dialog.
  * @param onMissionDone            v6: Called when the user taps "I DID IT".
  * @param onMissionAbandoned       v6: Called when the user taps "I COULDN'T DO IT".
  * @param onDiscomfortRatingChanged Called continuously as the user drags the slider.
@@ -411,6 +442,8 @@ private fun DashboardContent(
     todaysMission: Mission,
     showReflectionSlider: Boolean,
     currentDiscomfortRating: Int,
+    alternateMission: Mission?,             // v6: precomputed swap candidate (null = no swap available)
+    hasSwappedToday: Boolean,              // v6: true if user already swapped today
     onMissionClicked: () -> Unit,
     onAcceptMission: () -> Unit,
     onSwapMission: () -> Unit,
@@ -461,6 +494,8 @@ private fun DashboardContent(
             mission = todaysMission,
             showReflectionSlider = showReflectionSlider,
             currentDiscomfortRating = currentDiscomfortRating,
+            alternateMission = alternateMission,   // v6: pass swap candidate
+            hasSwappedToday  = hasSwappedToday,    // v6: pass swap-used flag
             onCardClicked = onMissionClicked,
             onAcceptMission = onAcceptMission,
             onSwapMission = onSwapMission,
@@ -779,10 +814,18 @@ private fun XpProgressSection(xpProgress: XpProgress) {
  *
  * v3: VIEW COMPLETION now calls onViewCompletion() instead of onCardClicked().
  *
- * v5: SWAP MISSION button no longer calls onSwapMission() directly.
- *     Instead, it sets showSwapBlockedDialog = true, which triggers SwapBlockedDialog —
- *     a motivational popup telling the user that skipping is forbidden.
- *     onSwapMission is kept as a parameter for potential future use (e.g., swap-after-penalty).
+ * v5: SWAP MISSION button formerly showed SwapBlockedDialog always — motivational popup
+ *     telling the user that skipping is forbidden.
+ *
+ * v6: SWAP MISSION is now real and difficulty-gated:
+ *     - If alternateMission != null (a compatible mission exists) → show SwapConfirmDialog.
+ *       SwapConfirmDialog shows the alternate mission details and has SWAP / STAY buttons.
+ *       Tapping SWAP calls onSwapMission() → ViewModel performs the real swap.
+ *     - If alternateMission == null → show SwapBlockedDialog with a contextual reason:
+ *         "already swapped today" OR "no mission within 2 difficulty levels exists".
+ *     This makes the swap feature real while preserving the app's core philosophy:
+ *     you cannot endlessly dodge hard missions — swaps are limited (once per day) and
+ *     constrained (cannot drop more than 2 difficulty levels).
  *
  * v6: Added onMissionDone and onMissionAbandoned for the IN_PROGRESS → return flow.
  *     Added MissionStatus.IN_PROGRESS branch in the when() block.
@@ -791,9 +834,13 @@ private fun XpProgressSection(xpProgress: XpProgress) {
  * @param mission                  The mission data to display.
  * @param showReflectionSlider     True when the discomfort slider should be shown (after "I DID IT").
  * @param currentDiscomfortRating  The live slider value (1–10).
+ * @param alternateMission         v6: Precomputed swap candidate. Non-null = swap available.
+ *                                 Null = swap unavailable (already swapped or no difficulty match).
+ * @param hasSwappedToday          v6: True if the daily swap was already used. Used to set the
+ *                                 reason text in SwapBlockedDialog when alternateMission is null.
  * @param onCardClicked            Called when the user taps the card body (future navigation).
  * @param onAcceptMission          Called when the user taps "ACCEPT THE MISSION".
- * @param onSwapMission            Kept for future use. NOT called by the SWAP MISSION button in v5.
+ * @param onSwapMission            v6: Called when the user confirms the swap in SwapConfirmDialog.
  * @param onMissionDone            v6: Called when the user taps "I DID IT" (shows discomfort slider).
  * @param onMissionAbandoned       v6: Called when the user taps "I COULDN'T DO IT" (resets to ACTIVE).
  * @param onDiscomfortRatingChanged Called as the slider moves.
@@ -805,6 +852,8 @@ private fun MissionCard(
     mission: Mission,
     showReflectionSlider: Boolean,
     currentDiscomfortRating: Int,
+    alternateMission: Mission?,             // v6: null = no swap available
+    hasSwappedToday: Boolean,              // v6: true = user already swapped today
     onCardClicked: () -> Unit,
     onAcceptMission: () -> Unit,
     onSwapMission: () -> Unit,
@@ -814,22 +863,50 @@ private fun MissionCard(
     onSubmitReflection: () -> Unit,
     onViewCompletion: () -> Unit              // v3: new parameter
 ) {
-    // ── v5: LOCAL DIALOG STATE ────────────────────────────────────────────
-    // Controls whether the "swap is forbidden" motivational dialog is visible.
-    // Starts as false (dialog hidden). Set to true when user taps SWAP MISSION.
-    // Set back to false when the user dismisses the dialog.
-    // Using explicit MutableState (not `by` delegation) so the compiler can see the
-    // .value reads in the if() check. `by` delegation triggers a false
-    // "assigned value is never read" warning on the assignments inside lambdas
-    // because the compiler cannot trace Compose recomposition reads across them.
+    // ── v6: LOCAL DIALOG STATE ────────────────────────────────────────────────
+    //
+    // showSwapConfirmDialog — true when the user taps SWAP MISSION and a valid alternate
+    // exists. Shows SwapConfirmDialog with the alternate mission's details.
+    // Set to true only when alternateMission != null.
+    val showSwapConfirmDialog = remember { mutableStateOf(false) }
+
+    // showSwapBlockedDialog — true when the user taps SWAP MISSION but no swap is available
+    // (either already swapped today, or no mission within the difficulty window exists).
+    // v5 note: In v5 this was always shown on any SWAP tap. In v6, it is only shown when
+    // no compatible alternate exists — otherwise SwapConfirmDialog is shown instead.
     val showSwapBlockedDialog = remember { mutableStateOf(false) }
 
-    // ── v5: SHOW THE MOTIVATIONAL DIALOG IF STATE IS TRUE ────────────────
-    // SwapBlockedDialog is placed here (above the card Box) so it can appear
-    // as an overlay over the entire screen — not clipped inside the card.
+    // ── v6: SHOW SWAP CONFIRM DIALOG IF OPEN ─────────────────────────────────
+    // Placed above the card Box so it appears as an overlay over the entire screen.
+    if (showSwapConfirmDialog.value && alternateMission != null) {
+        SwapConfirmDialog(
+            alternateMission = alternateMission,
+            onConfirm = {
+                // User tapped SWAP — execute the real swap via ViewModel callback,
+                // then close the dialog.
+                onSwapMission()
+                showSwapConfirmDialog.value = false
+            },
+            onDismiss = {
+                // User tapped STAY — close the dialog and return to the original mission.
+                showSwapConfirmDialog.value = false
+            }
+        )
+    }
+
+    // ── v6: SHOW SWAP BLOCKED DIALOG IF OPEN ─────────────────────────────────
+    // Placed above the card Box alongside SwapConfirmDialog.
     if (showSwapBlockedDialog.value) {
+        // Determine the reason to show in the dialog.
+        // "already swapped" takes priority; otherwise the alternate simply doesn't exist.
+        val blockedReason = if (hasSwappedToday) {
+            "You have already used your swap for today. Come back tomorrow with a fresh mission."
+        } else {
+            "There is no mission within 2 difficulty levels of this one available to swap to. Face this one — you are ready for it."
+        }
         SwapBlockedDialog(
-            onDismiss = { showSwapBlockedDialog.value = false }  // Tapping OK or outside hides the dialog
+            reason    = blockedReason,
+            onDismiss = { showSwapBlockedDialog.value = false }
         )
     }
 
@@ -952,10 +1029,13 @@ private fun MissionCard(
                     }
 
                     // ── SWAP MISSION BUTTON (location-dependent missions only) ────
-                    // v5: Tapping this no longer calls onSwapMission().
-                    //     Instead, it shows SwapBlockedDialog — a motivational popup
-                    //     telling the user that skipping is forbidden.
-                    //     The core philosophy of this app is: face the discomfort, don't avoid it.
+                    // v6: Now routes to one of two dialogs depending on swap availability:
+                    //   • alternateMission != null → SwapConfirmDialog (real swap offered)
+                    //   • alternateMission == null → SwapBlockedDialog (explains why blocked)
+                    // Previously (v5) this always showed SwapBlockedDialog — a motivational
+                    // "skipping is forbidden" popup with no actual swap. In v6, the swap is
+                    // real but gated: only allowed once per day, and only within the
+                    // difficulty window [currentD-2, currentD].
                     if (mission.isLocationDependent) {
                         Spacer(modifier = Modifier.height(10.dp))
 
@@ -965,8 +1045,16 @@ private fun MissionCard(
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(ColorSurfaceVariant)
-                                // v5: Set showSwapBlockedDialog.value = true instead of calling onSwapMission()
-                                .clickable { showSwapBlockedDialog.value = true }
+                                .clickable {
+                                    // v6: Route to the correct dialog based on swap availability.
+                                    if (alternateMission != null) {
+                                        // A compatible mission exists — show the confirm dialog.
+                                        showSwapConfirmDialog.value = true
+                                    } else {
+                                        // No swap available (already used or no difficulty match).
+                                        showSwapBlockedDialog.value = true
+                                    }
+                                }
                                 .padding(vertical = 14.dp)
                         ) {
                             Text(
@@ -1093,81 +1181,243 @@ private fun MissionCard(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// v5 NEW COMPOSABLE — Swap Blocked Dialog (motivational popup)
+// v6 NEW COMPOSABLE — Swap Confirm Dialog
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * SwapBlockedDialog — a motivational AlertDialog shown when the user taps "SWAP MISSION".
+ * SwapConfirmDialog — an AlertDialog shown when the user taps SWAP MISSION and
+ * a difficulty-compatible alternate mission is available.
  *
- * NEW in v5. The core philosophy of this app is that discomfort must be confronted,
- * not escaped. Rather than letting the user silently swap to an easier mission,
- * we intercept the attempt and remind them why they are here.
+ * NEW in v6. Shown when alternateMission is non-null (i.e., MissionRepository found
+ * a mission within the difficulty window [currentDifficulty-2, currentDifficulty]).
+ *
+ * Displays:
+ *   - The alternate mission's title so the user knows what they're swapping to.
+ *   - The alternate's difficulty dots so they can judge the trade-off.
+ *   - A "SWAP" gold button (confirms the swap, calls onConfirm).
+ *   - A "STAY WITH THIS MISSION" grey button (cancels, calls onDismiss).
  *
  * Design decisions:
- *   - The title is short and declarative — it immediately sets the tone.
- *   - The body message is motivational, not punishing. It acknowledges that the
- *     mission is hard, then pushes the user forward anyway.
- *   - There is only ONE button ("I WILL FACE IT") — there is no "skip anyway" escape hatch.
- *     Pressing it dismisses the dialog and returns the user to their original mission.
- *   - The dialog uses Material 3 AlertDialog so it inherits the dark theme
- *     automatically from MaterialTheme (set in MainActivity).
+ *   - Two buttons: the user must actively CHOOSE to swap, not accidentally trigger it.
+ *   - The alternate title is shown prominently — the user should know what they're
+ *     committing to BEFORE they commit. A blind swap would feel arbitrary.
+ *   - "STAY WITH THIS MISSION" is the secondary button — the app still nudges the user
+ *     toward facing the original challenge, but gives them a real choice.
+ *   - Uses Material 3 AlertDialog so it inherits the dark theme from MaterialTheme.
  *
- * Future ideas:
- *   - Randomise the body message from a pool of motivational quotes so it feels
- *     fresh even if the user taps SWAP MISSION repeatedly.
- *   - Add a "Why is this important?" expandable section with a short paragraph on
- *     the science of voluntary discomfort exposure.
- *   - After 3 taps in a session, unlock a genuine swap (with a streak-risk warning).
- *
- * @param onDismiss  Called when the user taps "I WILL FACE IT" or taps outside the dialog.
- *                   The caller (MissionCard) uses this to set showSwapBlockedDialog = false.
+ * @param alternateMission  The mission the user would swap to. Must not be null at the
+ *                          call site — this dialog is only shown when a valid alternate exists.
+ * @param onConfirm         Called when the user taps "SWAP". Triggers ViewModel.onSwapMission().
+ * @param onDismiss         Called when the user taps "STAY WITH THIS MISSION" or taps outside.
  */
 @Composable
-private fun SwapBlockedDialog(onDismiss: () -> Unit) {
+private fun SwapConfirmDialog(
+    alternateMission: Mission,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
     AlertDialog(
         // onDismissRequest fires when the user taps outside the dialog area.
-        // We treat that the same as tapping "I WILL FACE IT" — dialog closes.
+        // Treat as "STAY" — the user changed their mind about swapping.
         onDismissRequest = onDismiss,
 
         // ── DIALOG TITLE ─────────────────────────────────────────────────────
-        // Short, declarative, stoic. No question marks — this is a statement.
+        // Clearly states what's happening. The user is making a real decision.
         title = {
             Text(
-                text = "Skipping is forbidden.",
-                color = ColorTextPrimary,            // Off-white — primary text colour
+                text = "Swap your mission?",
+                color = ColorTextPrimary,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
+        },
+
+        // ── DIALOG BODY ───────────────────────────────────────────────────────
+        // Shows the alternate mission's title and difficulty so the user knows
+        // exactly what they're swapping to. No hidden surprises.
+        text = {
+            Column {
+                Text(
+                    text = "You will swap today's mission for:",
+                    color = ColorTextSecondary,
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // ── ALTERNATE MISSION PREVIEW ─────────────────────────────────
+                // Small card showing the alternate mission's title and difficulty.
+                // Styled to match the main card's aesthetic but smaller.
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(ColorSurfaceVariant)
+                        .padding(12.dp)
+                ) {
+                    Column {
+                        Text(
+                            text = alternateMission.title,
+                            color = ColorTextPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Difficulty dots for the alternate mission
+                        DifficultyIndicator(difficulty = alternateMission.difficulty)
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Text(
+                            text = "+${alternateMission.xpReward} XP",
+                            color = ColorAccentGold,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "You can only swap once per day. This cannot be undone.",
+                    color = ColorTextSecondary,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp
+                )
+            }
+        },
+
+        // ── CONFIRM BUTTON — SWAP ─────────────────────────────────────────────
+        // Gold — the primary action. Executing the swap is the active choice.
+        confirmButton = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(ColorAccentGold)
+                        .clickable(onClick = onConfirm)
+                        .padding(vertical = 14.dp)
+                ) {
+                    Text(
+                        text = "SWAP MISSION",
+                        color = Color(0xFF0D0D0D),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.5.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // ── DISMISS BUTTON — STAY ─────────────────────────────────────
+                // Grey secondary — staying with the original mission is the default.
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(ColorSurfaceVariant)
+                        .clickable(onClick = onDismiss)
+                        .padding(vertical = 14.dp)
+                ) {
+                    Text(
+                        text = "STAY WITH THIS MISSION",
+                        color = ColorTextSecondary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 1.sp
+                    )
+                }
+            }
+        },
+
+        // ── DIALOG CONTAINER COLOUR ───────────────────────────────────────────
+        // Set the dialog background to the dark surface colour so it matches the app's aesthetic.
+        containerColor = ColorSurface
+    )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v5 COMPOSABLE (UPDATED v6) — Swap Blocked Dialog
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * SwapBlockedDialog — shown when the user taps SWAP MISSION but no swap is available.
+ *
+ * NEW in v5 (original). Updated in v6.
+ *
+ * v5 behaviour: Always shown on any SWAP tap. Message was a generic motivational
+ * block ("Skipping is forbidden...") because the swap was always blocked.
+ *
+ * v6 behaviour: Only shown when alternateMission == null, i.e., the swap truly
+ * cannot happen. This covers two distinct situations:
+ *   1. hasSwappedToday == true  → "You have already used your swap for today."
+ *   2. No compatible mission    → "No mission within 2 difficulty levels exists."
+ * The caller determines which reason to pass via the [reason] parameter so the
+ * message is contextual and informative rather than a generic motivational block.
+ * The user deserves to know WHY they can't swap, not just that they can't.
+ *
+ * There is still only ONE button ("I UNDERSTAND") — no escape hatch. The user
+ * cannot override the difficulty gate or use a second swap. This is by design.
+ *
+ * @param reason    The specific reason the swap is blocked. Set by MissionCard based on
+ *                  hasSwappedToday and alternateMission. Displayed as the dialog body text.
+ * @param onDismiss Called when the user taps "I UNDERSTAND" or taps outside the dialog.
+ */
+@Composable
+private fun SwapBlockedDialog(
+    reason: String,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        // onDismissRequest fires when the user taps outside the dialog area.
+        // We treat that the same as tapping "I UNDERSTAND" — dialog closes.
+        onDismissRequest = onDismiss,
+
+        // ── DIALOG TITLE ─────────────────────────────────────────────────────
+        // Short, declarative. No question mark — this is a statement of fact.
+        title = {
+            Text(
+                text = "Swap unavailable.",
+                color = ColorTextPrimary,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold
             )
         },
 
         // ── DIALOG BODY MESSAGE ───────────────────────────────────────────────
-        // Motivational — acknowledges difficulty, then redirects the user forward.
-        // This is the heart of the app's philosophy: you face it, even when it's hard.
+        // v6: Contextual — set by the caller based on the actual reason.
+        // Not a generic motivational block — the user gets a real explanation.
         text = {
             Text(
-                text = "Sometimes it will be hard.\nSometimes it will feel impossible.\n\nThat is exactly why you must face it.\n\nThe discomfort you feel right now is the mission working. Stay.",
-                color = ColorTextSecondary,          // Muted grey — body text, not headline
+                text = reason,
+                color = ColorTextSecondary,
                 fontSize = 14.sp,
-                lineHeight = 22.sp                   // Comfortable line height for multi-line text
+                lineHeight = 22.sp
             )
         },
 
         // ── CONFIRM BUTTON ────────────────────────────────────────────────────
-        // Only one button — no escape hatch. "I WILL FACE IT" is the only option.
-        // This is intentional: the user committed to this challenge. Hold them to it.
+        // Only one button — no override path. The gate is firm.
         confirmButton = {
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(10.dp))
-                    .background(ColorAccentGold)     // Gold button — same as "ACCEPT THE MISSION"
-                    .clickable(onClick = onDismiss)   // Dismiss the dialog and return to the mission
+                    .background(ColorAccentGold)
+                    .clickable(onClick = onDismiss)
                     .padding(vertical = 14.dp)
             ) {
                 Text(
-                    text = "I WILL FACE IT",
-                    color = Color(0xFF0D0D0D),        // Near-black text on gold — high contrast
+                    text = "I UNDERSTAND",
+                    color = Color(0xFF0D0D0D),
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.5.sp

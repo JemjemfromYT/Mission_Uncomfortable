@@ -9,9 +9,9 @@
  *
  * KEY FILES (read these for full context before making changes):
  *   DashboardModels.kt     — All enums + data classes (Mission, Rank, XpProgress, MissionCategory)
- *   MissionRepository.kt   — Full mission library: 25 missions, 5 XP tiers, 6 categories ← YOU ARE HERE
+ *   MissionRepository.kt   — Full mission library: 40 missions, 5 XP tiers, 6 categories ← YOU ARE HERE
  *   DashboardViewModel.kt  — All game logic: XP, streaks, rank-ups, history saving, core loop
- *   DashboardScreen.kt     — Main UI. v5: SWAP MISSION button shows a popup, does NOT swap.
+ *   DashboardScreen.kt     — Main UI. v6: SWAP MISSION button now works (difficulty-gated).
  *   HistoryModels.kt       — CompletedMissionEntry data class
  *   HistoryViewModel.kt    — Reads history from SharedPreferences JSON
  *   HistoryScreen.kt       — Scrollable mission history UI
@@ -64,9 +64,9 @@
  *
  * ─── WHAT THIS FILE CONTAINS ────────────────────────────────────────────────
  *
- *   ALL_MISSIONS         — The complete library of 25 missions across 5 tiers.
- *   getMissionForToday() — Returns a deterministic mission based on the day of year.
- *   getAlternateMission()— Returns a different mission from today's (for future swap use).
+ *   ALL_MISSIONS          — The complete library of 40 missions across 5 tiers.
+ *   getMissionForToday()  — Returns a deterministic mission based on the day of year.
+ *   getAlternateMission() — Returns a difficulty-compatible swap mission, or null.
  *
  * ─── WHERE THIS FILE LIVES ───────────────────────────────────────────────────
  *
@@ -76,8 +76,18 @@
  *
  *   getMissionForToday() uses: dayOfYear % ALL_MISSIONS.size
  *   This means the same mission appears on the same calendar day every year.
- *   With 25 missions, a daily user sees each mission once every 25 days.
+ *   With 40 missions, a daily user sees each mission once every 40 days.
  *   Add more missions to extend the rotation window.
+ *
+ * ─── HOW SWAP WORKS ──────────────────────────────────────────────────────────
+ *
+ *   getAlternateMission(currentDifficulty) scans forward through ALL_MISSIONS
+ *   (starting after today's index) and returns the first mission whose difficulty
+ *   satisfies the swap rule: alternateD >= currentD - 2 AND alternateD <= currentD.
+ *   This means swaps are only allowed to missions of the SAME difficulty or up to
+ *   2 levels EASIER. You cannot swap UP to a harder mission or drop more than 2
+ *   difficulty levels — this prevents the app from becoming an easy-mode exploit.
+ *   Returns null if no compatible mission exists (rare with 40+ missions).
  *
  * ─── CHANGELOG ───────────────────────────────────────────────────────────────
  *
@@ -91,6 +101,16 @@
  *          Tier 4: 125 XP (difficulty 4) — 4 missions
  *          Tier 5: 150 XP (difficulty 5) — 3 missions
  *          getMissionForToday() and getAlternateMission() unchanged — algorithm scales automatically.
+ *
+ *   v3 — 40 missions (15 new added across all 5 tiers).
+ *          Tier 1: 50 XP  (difficulty 1) — 8 missions  (+3 new)
+ *          Tier 2: 75 XP  (difficulty 2) — 11 missions (+4 new)
+ *          Tier 3: 100 XP (difficulty 3) — 11 missions (+4 new)
+ *          Tier 4: 125 XP (difficulty 4) — 6 missions  (+2 new)
+ *          Tier 5: 150 XP (difficulty 5) — 4 missions  (+1 new)
+ *          getAlternateMission() updated: now accepts currentDifficulty: Int and
+ *          returns Mission? (null if no compatible swap exists within the difficulty
+ *          window of [currentDifficulty-2, currentDifficulty]).
  */
 
 package com.example.missionuncomfortable.data
@@ -103,7 +123,7 @@ import java.util.Calendar
 object MissionRepository {
 
     // ─────────────────────────────────────────────────────────────────────────
-    // COMPLETE MISSION LIBRARY — 25 MISSIONS
+    // COMPLETE MISSION LIBRARY — 40 MISSIONS
     // ─────────────────────────────────────────────────────────────────────────
     //
     // Each mission has: id, title, objective, rules, xpReward, difficulty,
@@ -187,6 +207,53 @@ object MissionRepository {
             ),
             xpReward = 50, difficulty = 1, isLocationDependent = true,
             category = MissionCategory.SOCIAL_INITIATION,
+            dateAssigned = "", status = MissionStatus.ACTIVE
+        ),
+
+        // ── TIER 1 — NEW MISSIONS (v3) ───────────────────────────────────────
+
+        Mission(
+            id = "thank_you_note",
+            title = "The Written Word",
+            objective = "Write a genuine thank-you note — by hand — to someone who has helped you, and give it to them in person.",
+            rules = listOf(
+                "Must be handwritten. No printed or typed notes.",
+                "The note must be specific: name one thing they did and how it affected you.",
+                "Hand it to them directly. Do not leave it somewhere for them to find alone.",
+                "Submit your discomfort rating after the handover."
+            ),
+            xpReward = 50, difficulty = 1, isLocationDependent = false,
+            category = MissionCategory.SOCIAL_INITIATION,
+            dateAssigned = "", status = MissionStatus.ACTIVE
+        ),
+
+        Mission(
+            id = "wave_at_neighbour",
+            title = "The Acknowledgment",
+            objective = "Acknowledge every neighbour, doorman, or building staff member you pass today with a greeting and eye contact.",
+            rules = listOf(
+                "Must apply to every person you pass in shared spaces — hallway, lift, entrance.",
+                "Greeting must be verbal — not just a nod.",
+                "If someone ignores you, greet the next person anyway.",
+                "Submit your discomfort rating at the end of the day."
+            ),
+            xpReward = 50, difficulty = 1, isLocationDependent = true,
+            category = MissionCategory.EYE_CONTACT,
+            dateAssigned = "", status = MissionStatus.ACTIVE
+        ),
+
+        Mission(
+            id = "sit_without_distraction",
+            title = "The Empty Five",
+            objective = "Sit completely still for 5 minutes with nothing to do — no phone, no book, no fidgeting.",
+            rules = listOf(
+                "Choose a chair or bench. Sit upright. Hands on knees.",
+                "No phone, no book, no food, no music.",
+                "If you move your hands, restart the timer.",
+                "Submit your discomfort rating when the 5 minutes are done."
+            ),
+            xpReward = 50, difficulty = 1, isLocationDependent = false,
+            category = MissionCategory.PRESENCE,
             dateAssigned = "", status = MissionStatus.ACTIVE
         ),
 
@@ -297,6 +364,68 @@ object MissionRepository {
             dateAssigned = "", status = MissionStatus.ACTIVE
         ),
 
+        // ── TIER 2 — NEW MISSIONS (v3) ───────────────────────────────────────
+
+        Mission(
+            id = "disagree_out_loud",
+            title = "The Disagreement",
+            objective = "Respectfully but clearly disagree with someone's stated opinion today — out loud, in the moment.",
+            rules = listOf(
+                "Must be a genuine disagreement, not a manufactured one.",
+                "State your position calmly and specifically — give one real reason.",
+                "Do not retract or soften it if they push back. Hold your ground politely.",
+                "Submit your discomfort rating after the exchange."
+            ),
+            xpReward = 75, difficulty = 2, isLocationDependent = false,
+            category = MissionCategory.REJECTION_PRACTICE,
+            dateAssigned = "", status = MissionStatus.ACTIVE
+        ),
+
+        Mission(
+            id = "admit_a_mistake",
+            title = "The Admission",
+            objective = "Admit a mistake you made — today or recently — to the person it affected, directly and without minimising it.",
+            rules = listOf(
+                "Must be in person or on a voice call. Not a text.",
+                "State clearly what you did wrong. No hedging ('I'm sorry you felt...').",
+                "Do not wait for a 'right moment' — create the moment.",
+                "Submit your discomfort rating within 10 minutes."
+            ),
+            xpReward = 75, difficulty = 2, isLocationDependent = false,
+            category = MissionCategory.SOCIAL_INITIATION,
+            dateAssigned = "", status = MissionStatus.ACTIVE
+        ),
+
+        Mission(
+            id = "walk_without_phone",
+            title = "The Unguided Walk",
+            objective = "Take a 20-minute walk in public with your phone completely off — not silent, OFF.",
+            rules = listOf(
+                "Phone must be powered off before you leave — not just silenced.",
+                "Choose a route you do not normally walk.",
+                "Notice three things you have never noticed before on that route.",
+                "Submit your discomfort rating when you return home."
+            ),
+            xpReward = 75, difficulty = 2, isLocationDependent = true,
+            category = MissionCategory.PRESENCE,
+            dateAssigned = "", status = MissionStatus.ACTIVE
+        ),
+
+        Mission(
+            id = "ask_stranger_opinion",
+            title = "The Canvass",
+            objective = "Ask a stranger for their honest opinion on something that genuinely matters to you.",
+            rules = listOf(
+                "It must be a real question, not a throwaway one.",
+                "Let them finish their full answer before you respond.",
+                "Thank them specifically — mention one thing they said.",
+                "Submit your discomfort rating after the conversation ends."
+            ),
+            xpReward = 75, difficulty = 2, isLocationDependent = true,
+            category = MissionCategory.SOCIAL_INITIATION,
+            dateAssigned = "", status = MissionStatus.ACTIVE
+        ),
+
         // ── TIER 3 — 100 XP — difficulty 3 ──────────────────────────────────
 
         Mission(
@@ -404,6 +533,68 @@ object MissionRepository {
             dateAssigned = "", status = MissionStatus.ACTIVE
         ),
 
+        // ── TIER 3 — NEW MISSIONS (v3) ───────────────────────────────────────
+
+        Mission(
+            id = "return_something",
+            title = "The Return",
+            objective = "Return something you bought — even if it is inconvenient — and deal with whatever resistance arises.",
+            rules = listOf(
+                "Must be an in-person return at a physical store.",
+                "State your reason clearly and calmly once. Do not over-justify.",
+                "If pushed back on, hold your position without aggression.",
+                "Submit your discomfort rating after the transaction is resolved."
+            ),
+            xpReward = 100, difficulty = 3, isLocationDependent = true,
+            category = MissionCategory.REJECTION_PRACTICE,
+            dateAssigned = "", status = MissionStatus.ACTIVE
+        ),
+
+        Mission(
+            id = "sing_hum_public",
+            title = "The Audible Self",
+            objective = "Hum or sing softly but audibly in a public place — loud enough that someone nearby could hear.",
+            rules = listOf(
+                "Must be in a public space — not alone at home.",
+                "Must be loud enough that someone within 2 metres could hear it.",
+                "Continue for at least 60 seconds without stopping due to embarrassment.",
+                "Submit your discomfort rating when you stop."
+            ),
+            xpReward = 100, difficulty = 3, isLocationDependent = true,
+            category = MissionCategory.PERFORMANCE,
+            dateAssigned = "", status = MissionStatus.ACTIVE
+        ),
+
+        Mission(
+            id = "compliment_boss_senior",
+            title = "Up the Ladder",
+            objective = "Give a genuine, specific compliment to someone above you in status — your manager, a professor, or someone you find intimidating.",
+            rules = listOf(
+                "Must be delivered in person, not by email or text.",
+                "It must be specific: not 'you're great' but 'the way you handled X was impressive because Y.'",
+                "Do not apologise or undercut the compliment with self-deprecation.",
+                "Submit your discomfort rating immediately after."
+            ),
+            xpReward = 100, difficulty = 3, isLocationDependent = false,
+            category = MissionCategory.SOCIAL_INITIATION,
+            dateAssigned = "", status = MissionStatus.ACTIVE
+        ),
+
+        Mission(
+            id = "skip_social_media",
+            title = "The Blackout",
+            objective = "Go the entire day without opening any social media app — and stay in every uncomfortable moment that produces.",
+            rules = listOf(
+                "Delete or log out from social media apps for the full day.",
+                "When you feel the urge to check, sit with the urge for 60 seconds before doing anything else.",
+                "Notice how many times you reach for your phone out of habit.",
+                "Submit your discomfort rating at the end of the day."
+            ),
+            xpReward = 100, difficulty = 3, isLocationDependent = false,
+            category = MissionCategory.PRESENCE,
+            dateAssigned = "", status = MissionStatus.ACTIVE
+        ),
+
         // ── TIER 4 — 125 XP — difficulty 4 ──────────────────────────────────
 
         Mission(
@@ -466,6 +657,38 @@ object MissionRepository {
             dateAssigned = "", status = MissionStatus.ACTIVE
         ),
 
+        // ── TIER 4 — NEW MISSIONS (v3) ───────────────────────────────────────
+
+        Mission(
+            id = "confront_a_habit",
+            title = "The Cut",
+            objective = "Identify your biggest avoidance habit and deliberately face it once today — not for long, just once.",
+            rules = listOf(
+                "Write down the habit before you begin.",
+                "Face it once, deliberately, for a minimum of 5 minutes.",
+                "Do not allow yourself a 'reward' immediately afterward — sit with the feeling.",
+                "Submit your discomfort rating after the 5 minutes end."
+            ),
+            xpReward = 125, difficulty = 4, isLocationDependent = false,
+            category = MissionCategory.PRESENCE,
+            dateAssigned = "", status = MissionStatus.ACTIVE
+        ),
+
+        Mission(
+            id = "join_public_activity",
+            title = "The Walk-In",
+            objective = "Join a group activity you have never done before — without knowing anyone there and without telling anyone in advance.",
+            rules = listOf(
+                "Could be a fitness class, a community event, a local club, a workshop.",
+                "Must be a real, in-person group. Online does not count.",
+                "Stay for the full duration of the activity.",
+                "Introduce yourself to at least one person before you leave."
+            ),
+            xpReward = 125, difficulty = 4, isLocationDependent = true,
+            category = MissionCategory.SOCIAL_INITIATION,
+            dateAssigned = "", status = MissionStatus.ACTIVE
+        ),
+
         // ── TIER 5 — 150 XP — difficulty 5 ──────────────────────────────────
 
         Mission(
@@ -512,6 +735,23 @@ object MissionRepository {
             xpReward = 150, difficulty = 5, isLocationDependent = false,
             category = MissionCategory.REJECTION_PRACTICE,
             dateAssigned = "", status = MissionStatus.ACTIVE
+        ),
+
+        // ── TIER 5 — NEW MISSIONS (v3) ───────────────────────────────────────
+
+        Mission(
+            id = "perform_in_public",
+            title = "The Stage",
+            objective = "Perform something in public — sing, recite, play, or speak — where strangers can stop and watch.",
+            rules = listOf(
+                "Must be outdoors or in a public indoor space where people are present.",
+                "Perform for a minimum of 2 minutes without stopping.",
+                "Do not walk away if people gather to watch — face them.",
+                "Submit your discomfort rating the moment you finish."
+            ),
+            xpReward = 150, difficulty = 5, isLocationDependent = true,
+            category = MissionCategory.PERFORMANCE,
+            dateAssigned = "", status = MissionStatus.ACTIVE
         )
     )
 
@@ -537,20 +777,55 @@ object MissionRepository {
     }
 
     /**
-     * getAlternateMission — returns a different mission from today's.
+     * getAlternateMission — returns the first difficulty-compatible swap candidate.
      *
-     * Used as the "swap" target. Returns the next mission in the list
-     * (wrapping around at the end). This ensures the alternate is always
-     * different from today's assignment.
+     * v3 UPDATE: This function now accepts currentDifficulty and enforces the swap rule:
      *
-     * NOTE: In v5 (DashboardScreen), the SWAP MISSION button no longer calls
-     * the ViewModel's onSwapMission() — it shows a motivational popup instead.
-     * This function is retained for when swapping is re-enabled in a future version.
+     *   A swap is allowed only when the candidate mission's difficulty satisfies:
+     *     candidate.difficulty >= currentDifficulty - 2  AND
+     *     candidate.difficulty <= currentDifficulty
+     *
+     *   In plain English: you can swap to a mission of the SAME difficulty, or up to
+     *   2 levels EASIER. You cannot swap UP to something harder, and you cannot drop
+     *   more than 2 difficulty levels — this prevents the app from being used to
+     *   consistently dodge hard missions.
+     *
+     * The search starts at (todayIndex + 1) and wraps through the full list.
+     * Today's mission is always skipped (offset starts at 1).
+     *
+     * Returns null if no mission in the entire list satisfies the difficulty window.
+     * With 40 missions this should rarely happen, but callers must handle null.
+     *
+     * NOTE (v2 reference): In v5 of DashboardScreen, the SWAP MISSION button showed a
+     * motivational popup instead of calling this function. In v3 of this file (DashboardScreen v6),
+     * swapping is now real and gated by the difficulty check described above.
+     *
+     * @param currentDifficulty  The difficulty of today's currently active mission (1–5).
+     * @return                   The first compatible swap candidate, or null if none exists.
      */
-    fun getAlternateMission(): Mission {
+    fun getAlternateMission(currentDifficulty: Int): Mission? {
         val dayOfYear = Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
         val todayIndex = dayOfYear % ALL_MISSIONS.size
-        val alternateIndex = (todayIndex + 1) % ALL_MISSIONS.size
-        return ALL_MISSIONS[alternateIndex]
+
+        // Scan forward through the list, starting one position after today's mission.
+        // offset starts at 1 so we always skip today's own mission.
+        for (offset in 1..ALL_MISSIONS.size) {
+            val candidateIndex = (todayIndex + offset) % ALL_MISSIONS.size
+            val candidate = ALL_MISSIONS[candidateIndex]
+
+            // Swap rule: candidate difficulty must be equal to current, or up to 2 levels easier.
+            // candidateD >= currentD - 2  →  not more than 2 levels easier
+            // candidateD <= currentD      →  not harder than current
+            val diffDiff = currentDifficulty - candidate.difficulty
+            val isCompatible = diffDiff in 0..2   // 0 = same, 1 = one easier, 2 = two easier
+
+            if (isCompatible) {
+                return candidate
+            }
+        }
+
+        // No compatible mission found in the entire list.
+        // This should not happen with a properly populated ALL_MISSIONS, but return null defensively.
+        return null
     }
 }
