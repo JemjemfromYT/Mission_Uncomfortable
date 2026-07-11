@@ -166,6 +166,7 @@ package com.example.missionuncomfortable.ui.dashboard
 // ─── IMPORTS ──────────────────────────────────────────────────────────────────
 // Jetpack Compose UI building blocks
 import androidx.compose.animation.core.animateFloatAsState          // Smoothly animates a float value
+import androidx.compose.animation.core.animateIntAsState           // Smoothly animates an Int value (XP count-up)
 import androidx.compose.animation.core.tween                        // Animation timing spec
 import androidx.compose.foundation.Image                            // Image composable for rank badge
 import androidx.compose.foundation.background                       // Sets the background colour of a composable
@@ -180,6 +181,7 @@ import androidx.compose.runtime.*                                   // remember,
 import androidx.compose.ui.Alignment                                // Alignment constants (center, start, end, etc.)
 import androidx.compose.ui.Modifier                                 // Modifier — the "how does it look and behave" chain
 import androidx.compose.ui.draw.clip                                // Clips a composable to a specific shape
+import androidx.compose.ui.draw.alpha                              // Sets composable opacity via Modifier.alpha()
 import androidx.compose.ui.graphics.Color                           // Colour class — use hex values like Color(0xFF...)
 import androidx.compose.ui.layout.ContentScale                      // Controls how Image content is scaled inside bounds
 import androidx.compose.ui.res.painterResource                      // Loads a drawable resource for use in Image()
@@ -1218,6 +1220,39 @@ private fun DailyCompleteScreen(
     var tapCount     by remember { mutableStateOf(0) }
     var firstTapTime by remember { mutableStateOf(0L) }
 
+    // ── ENTRANCE ANIMATION ────────────────────────────────────────────────────
+    // visible starts false and is flipped to true by LaunchedEffect(Unit) on the
+    // first composition. Every animateFloatAsState below reacts to that flip,
+    // producing a staggered reveal so elements don't all appear at once.
+    //
+    // Stagger order (delay in ms):
+    //   80  ms — "MISSION COMPLETE" gold label (arrives first)
+    //  250  ms — "Come back tomorrow." heading (slides up 32 dp while fading in)
+    //  450  ms — subtitle text
+    //  650  ms — XP section (XP number counts up in sync via animateIntAsState)
+    //  900  ms — footer quote (last, gives the screen a sense of pacing)
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+
+    val headerAlpha   by animateFloatAsState(if (visible) 1f else 0f,  animationSpec = tween(500, delayMillis = 80),  label = "headerAlpha")
+    val headingAlpha  by animateFloatAsState(if (visible) 1f else 0f,  animationSpec = tween(600, delayMillis = 250), label = "headingAlpha")
+    val headingOffset by animateFloatAsState(if (visible) 0f else 32f, animationSpec = tween(600, delayMillis = 250), label = "headingOffset")
+    val subtitleAlpha by animateFloatAsState(if (visible) 1f else 0f,  animationSpec = tween(500, delayMillis = 450), label = "subtitleAlpha")
+    val xpAlpha       by animateFloatAsState(if (visible) 1f else 0f,  animationSpec = tween(500, delayMillis = 650), label = "xpAlpha")
+    val footerAlpha   by animateFloatAsState(if (visible) 1f else 0f,  animationSpec = tween(500, delayMillis = 900), label = "footerAlpha")
+
+    // ── XP COUNT-UP ───────────────────────────────────────────────────────────
+    // The XP number counts from 0 to the user's actual total over 1 000 ms,
+    // starting 650 ms after the screen appears (in sync with the XP section fade).
+    // The progress bar fill already animates on its own inside XpProgressSection
+    // via animateFloatAsState — no extra code needed for the bar itself.
+    val targetXp   = xpProgress?.currentXp ?: 0
+    val animatedXp by animateIntAsState(
+        targetValue   = if (visible) targetXp else 0,
+        animationSpec = tween(durationMillis = 1000, delayMillis = 650),
+        label         = "XpCountUp"
+    )
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1230,69 +1265,89 @@ private fun DailyCompleteScreen(
         // v7: This Text is the secret admin tap target on this screen.
         // Tapping it 7 times within 3 seconds opens the admin panel.
         // No visual feedback is shown — completely invisible to regular users.
+        // Animation: fades in first (80 ms delay) so it settles before the heading.
         Text(
             text = "MISSION COMPLETE",
             color = ColorAccentGold,
             fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold,
             letterSpacing = 3.sp,
-            modifier = Modifier.clickable {
-                val now = System.currentTimeMillis()
-                if (tapCount == 0 || now - firstTapTime > 3_000L) {
-                    tapCount     = 1
-                    firstTapTime = now
-                } else {
-                    tapCount++
-                    if (tapCount >= 7) {
-                        tapCount     = 0
-                        firstTapTime = 0L
-                        onAdminTriggered()
+            modifier = Modifier
+                .alpha(headerAlpha)
+                .clickable {
+                    val now = System.currentTimeMillis()
+                    if (tapCount == 0 || now - firstTapTime > 3_000L) {
+                        tapCount     = 1
+                        firstTapTime = now
+                    } else {
+                        tapCount++
+                        if (tapCount >= 7) {
+                            tapCount     = 0
+                            firstTapTime = 0L
+                            onAdminTriggered()
+                        }
                     }
                 }
-            }
         )
 
         Spacer(modifier = Modifier.height(12.dp))
 
+        // ── MAIN HEADING ──────────────────────────────────────────────────
+        // Slides up from 32 dp below its resting position while fading in.
+        // 250 ms delay — arrives just after "MISSION COMPLETE" lands.
         Text(
             text = "Come back\ntomorrow.",
             color = ColorTextPrimary,
             fontSize = 36.sp,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
-            lineHeight = 44.sp
+            lineHeight = 44.sp,
+            modifier = Modifier
+                .alpha(headingAlpha)
+                .offset(y = headingOffset.dp)
         )
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        // ── SUBTITLE ─────────────────────────────────────────────────────
+        // 450 ms delay — appears after the heading finishes landing.
         Text(
             text = "You've done your part for today.",
             color = ColorTextSecondary,
             fontSize = 14.sp,
-            textAlign = TextAlign.Center
+            textAlign = TextAlign.Center,
+            modifier = Modifier.alpha(subtitleAlpha)
         )
 
         Spacer(modifier = Modifier.height(48.dp))
 
         // ── UPDATED XP BAR ────────────────────────────────────────────────
-        // Show the XP progress bar so the user can see their updated total.
-        // If xpProgress is null (should not happen), show nothing.
+        // Fades in at 650 ms. The XP number counts up from 0 to the user's
+        // actual total (animatedXp). The bar fill animates automatically inside
+        // XpProgressSection via its own animateFloatAsState — no extra code needed.
         if (xpProgress != null) {
-            XpProgressSection(xpProgress = xpProgress)
+            Box(modifier = Modifier.alpha(xpAlpha)) {
+                XpProgressSection(
+                    xpProgress = xpProgress.copy(currentXp = animatedXp)
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(32.dp))
 
         // ── CLOSING MESSAGE ───────────────────────────────────────────────
+        // Last element to appear (900 ms) — gives the screen a sense of pacing.
         Text(
             text = "Discomfort endured today\nbuilds the strength you need tomorrow.",
             color = ColorTextSecondary.copy(alpha = 0.6f),
             fontSize = 12.sp,
             textAlign = TextAlign.Center,
-            lineHeight = 18.sp
+            lineHeight = 18.sp,
+            modifier = Modifier.alpha(footerAlpha)
         )
     }
 }
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPER COMPOSABLE — Military Briefing Section
