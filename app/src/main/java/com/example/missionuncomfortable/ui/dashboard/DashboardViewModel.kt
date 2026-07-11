@@ -158,11 +158,9 @@
  *              since every write already uses an explicit val editor variable, there is
  *              no longer any ambiguity. apply() is the correct idiomatic choice.
  *
- *   v6 — KTX SharedPreferences.edit migration:
- *            - All explicit editor patterns replaced with the KTX prefs.edit { } lambda.
- *              The lambda internally calls apply() after the block — no explicit call needed.
- *              This is the idiomatic Kotlin / Android KTX form and eliminates all remaining
- *              "Use KTX extension function SharedPreferences.edit" lint warnings.
+ *   Note: Android Studio suggests prefs.edit { } KTX lambda syntax at every write site.
+ *         This is advisory only — the project does not depend on the core-ktx SharedPreferences
+ *         extension, so the explicit val editor / editor.apply() pattern is intentional.
  */
 
 package com.example.missionuncomfortable.ui.dashboard
@@ -354,13 +352,13 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             hasSwappedToday = false
             activeMission   = MissionRepository.getMissionForToday()
 
-            // Persist the new day's baseline. The KTX prefs.edit { } lambda calls apply() automatically.
-            prefs.edit {
-                putString(KEY_MISSION_STATUS, "ACTIVE")
-                putString(KEY_MISSION_ID, activeMission.id)
-                putString(KEY_MISSION_DATE, todayString)
-                putBoolean(KEY_HAS_SWAPPED_TODAY, false)
-            }
+            // Persist the new day's baseline.
+            val editor = prefs.edit()
+            editor.putString(KEY_MISSION_STATUS, "ACTIVE")
+            editor.putString(KEY_MISSION_ID, activeMission.id)
+            editor.putString(KEY_MISSION_DATE, todayString)
+            editor.putBoolean(KEY_HAS_SWAPPED_TODAY, false)
+            editor.apply()
         }
 
         // ── Restore mission status from SharedPreferences ─────────────────────
@@ -453,10 +451,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         val mission = current.todaysMission ?: return
 
         // Persist IN_PROGRESS to SharedPreferences
-        prefs.edit {
-            putString(KEY_MISSION_STATUS, "IN_PROGRESS")
-            putString(KEY_MISSION_ID, mission.id)
-        }
+        val editor = prefs.edit()
+        editor.putString(KEY_MISSION_STATUS, "IN_PROGRESS")
+        editor.putString(KEY_MISSION_ID, mission.id)
+        editor.apply()
 
         _uiState.value = current.copy(
             todaysMission    = mission.copy(status = MissionStatus.IN_PROGRESS),
@@ -495,7 +493,9 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         val current = _uiState.value ?: return
         val mission = current.todaysMission ?: return
 
-        prefs.edit { putString(KEY_MISSION_STATUS, "ACTIVE") }
+        val editor = prefs.edit()
+        editor.putString(KEY_MISSION_STATUS, "ACTIVE")
+        editor.apply()
 
         // v4: Recompute the alternate in case we need to re-offer the swap button.
         // This handles the case where the user accepted → abandoned → wants to swap.
@@ -553,7 +553,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         // ── Step 1: Award XP ──────────────────────────────────────────────────
         val oldTotalXp  = prefs.getInt(KEY_TOTAL_XP, 0)
         val newTotalXp  = oldTotalXp + mission.xpReward
-        prefs.edit { putInt(KEY_TOTAL_XP, newTotalXp) }
+        prefs.edit().putInt(KEY_TOTAL_XP, newTotalXp).apply()
 
         // Compute old rank and new rank
         val oldXpProgress = calculateXpProgress(oldTotalXp)
@@ -564,7 +564,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         val bestStreak    = prefs.getInt(KEY_BEST_STREAK, 0)
         val isPersonalBest = newStreakCount > bestStreak
         if (isPersonalBest) {
-            prefs.edit { putInt(KEY_BEST_STREAK, newStreakCount) }
+            prefs.edit().putInt(KEY_BEST_STREAK, newStreakCount).apply()
         }
 
         // ── Step 3: Save history entry ────────────────────────────────────────
@@ -575,10 +575,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         )
 
         // ── Step 4: Mark mission as completed in SharedPreferences ────────────
-        prefs.edit {
-            putString(KEY_MISSION_STATUS, "COMPLETED")
-            putString(KEY_LAST_COMPLETED_DATE, today())
-        }
+        val completionEditor = prefs.edit()
+        completionEditor.putString(KEY_MISSION_STATUS, "COMPLETED")
+        completionEditor.putString(KEY_LAST_COMPLETED_DATE, today())
+        completionEditor.apply()
 
         val completedMission = mission.copy(
             status           = MissionStatus.COMPLETED,
@@ -687,11 +687,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         val alternate = current.alternateMission ?: return  // Safety: no swap if no alternate
 
         // Persist the swapped mission ID and the swap flag
-        prefs.edit {
-            putString(KEY_MISSION_ID, alternate.id)
-            putString(KEY_MISSION_STATUS, "ACTIVE")   // Swapped mission starts ACTIVE
-            putBoolean(KEY_HAS_SWAPPED_TODAY, true)
-        }
+        val editor = prefs.edit()
+        editor.putString(KEY_MISSION_ID, alternate.id)
+        editor.putString(KEY_MISSION_STATUS, "ACTIVE")   // Swapped mission starts ACTIVE
+        editor.putBoolean(KEY_HAS_SWAPPED_TODAY, true)
+        editor.apply()
 
         _uiState.value = current.copy(
             todaysMission    = alternate,
@@ -750,10 +750,10 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             else            -> 1                      // Broken streak — reset to 1
         }
 
-        prefs.edit {
-            putInt(KEY_STREAK_COUNT, newStreak)
-            putString(KEY_LAST_STREAK_DATE, todayString)
-        }
+        val streakEditor = prefs.edit()
+        streakEditor.putInt(KEY_STREAK_COUNT, newStreak)
+        streakEditor.putString(KEY_LAST_STREAK_DATE, todayString)
+        streakEditor.apply()
 
         return newStreak
     }
@@ -797,7 +797,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             "[" + newEntry + "," + existing.substring(1)
         }
 
-        prefs.edit { putString(KEY_HISTORY_JSON, updatedJson) }
+        prefs.edit().putString(KEY_HISTORY_JSON, updatedJson).apply()
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -844,7 +844,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             levels.add(levelString)
         }
 
-        prefs.edit { putString(KEY_ASCENSION_SEEN, levels.joinToString(",")) }
+        prefs.edit().putString(KEY_ASCENSION_SEEN, levels.joinToString(",")).apply()
     }
 
     // ─────────────────────────────────────────────────────────────────────────
