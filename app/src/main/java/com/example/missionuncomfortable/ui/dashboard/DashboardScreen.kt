@@ -897,12 +897,20 @@ private fun MissionCard(
     // ── v6: SHOW SWAP BLOCKED DIALOG IF OPEN ─────────────────────────────────
     // Placed above the card Box alongside SwapConfirmDialog.
     if (showSwapBlockedDialog.value) {
-        // Determine the reason to show in the dialog.
-        // "already swapped" takes priority; otherwise the alternate simply doesn't exist.
-        val blockedReason = if (hasSwappedToday) {
-            "You have already used your swap for today. Come back tomorrow with a fresh mission."
-        } else {
-            "There is no mission within 2 difficulty levels of this one available to swap to. Face this one — you are ready for it."
+        // Determine the reason shown in SwapBlockedDialog.
+        // v8: Three cases:
+        //   1. Hard mission (difficulty >= 3): cannot ever swap — motivational message.
+        //   2. Already swapped today: used the daily swap — try again tomorrow.
+        //   3. No alternate found: edge case, no compatible mission in the list.
+        val blockedReason = when {
+            mission.difficulty >= 3 ->
+                "Skipping is forbidden.\n\nThis mission is difficult — and that is exactly the point. " +
+                        "Missions at difficulty 3 and above cannot be swapped out. " +
+                        "Discomfort is the whole game. Face it."
+            hasSwappedToday ->
+                "You have already used your swap for today. Come back tomorrow with a fresh mission."
+            else ->
+                "There is no compatible mission available to swap to right now. Face this one."
         }
         SwapBlockedDialog(
             reason    = blockedReason,
@@ -1028,43 +1036,41 @@ private fun MissionCard(
                         )
                     }
 
-                    // ── SWAP MISSION BUTTON (difficulty 3, 4, or 5) ─────────────────
-                    // v7: Gate changed from isLocationDependent → difficulty >= 3.
-                    //   • alternateMission != null → SwapConfirmDialog (real swap offered)
-                    //   • alternateMission == null → SwapBlockedDialog (explains why blocked)
-                    // Previously (v5) this always showed SwapBlockedDialog — a motivational
-                    // "skipping is forbidden" popup with no actual swap. In v6, the swap is
-                    // real but gated: only allowed once per day, and only within the
-                    // difficulty window [currentD-2, currentD].
-                    if (mission.difficulty >= 3) {
-                        Spacer(modifier = Modifier.height(10.dp))
+                    // ── SWAP MISSION BUTTON (all active missions) ─────────────────────
+                    // v8: Shown for ALL missions while ACTIVE. Behaviour on tap:
+                    //   • Difficulty 1–2 → real swap offered via SwapConfirmDialog
+                    //     (if an alternate exists within difficulty window); else SwapBlockedDialog.
+                    //   • Difficulty 3–5 → always SwapBlockedDialog with motivational message:
+                    //     "Skipping is forbidden. Hard missions cannot be swapped."
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(ColorSurfaceVariant)
-                                .clickable {
-                                    // v6: Route to the correct dialog based on swap availability.
-                                    if (alternateMission != null) {
-                                        // A compatible mission exists — show the confirm dialog.
-                                        showSwapConfirmDialog.value = true
-                                    } else {
-                                        // No swap available (already used or no difficulty match).
-                                        showSwapBlockedDialog.value = true
-                                    }
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(ColorSurfaceVariant)
+                            .clickable {
+                                // v8: Route by difficulty first, then swap availability.
+                                // Difficulty 3+ → always blocked (hard missions cannot be swapped).
+                                // Difficulty 1–2 → real swap if an alternate exists, blocked otherwise.
+                                if (mission.difficulty >= 3) {
+                                    showSwapBlockedDialog.value = true
+                                } else if (alternateMission != null) {
+                                    showSwapConfirmDialog.value = true
+                                } else {
+                                    showSwapBlockedDialog.value = true
                                 }
-                                .padding(vertical = 14.dp)
-                        ) {
-                            Text(
-                                text = "SWAP MISSION",
-                                color = ColorTextSecondary,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                letterSpacing = 1.5.sp
-                            )
-                        }
+                            }
+                            .padding(vertical = 14.dp)
+                    ) {
+                        Text(
+                            text = "SWAP MISSION",
+                            color = ColorTextSecondary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 1.5.sp
+                        )
                     }
 
                 }
