@@ -165,6 +165,15 @@
  *          3. New imports: FastOutSlowInEasing, RepeatMode, animateFloat,
  *             infiniteRepeatable, rememberInfiniteTransition, drawBehind, Brush.
  *
+ *   v14 — HARD-MISSION SWAP BLOCK RESTORED + DYNAMIC DIALOG TITLE:
+ *          Restored "Skipping is forbidden" for difficulty >= 3. The button click handler
+ *          already routed difficulty >= 3 to SwapBlockedDialog since v8, but the reason
+ *          text checked hasSwappedToday FIRST — so if the admin panel had set that flag,
+ *          "swap used today" would mask the real block. Fixed by checking mission.difficulty
+ *          >= 3 first in the (blockedTitle, blockedReason) when-expression. SwapBlockedDialog
+ *          now accepts a `title` String so hard missions show "Skipping is forbidden." while
+ *          other blocked cases show "Swap unavailable." as before.
+ *
  *   v13 — RANK DIFFICULTY FIX + SWAP UNBLOCK:
  *          Removed the hardcoded "difficulty >= 3 cannot swap" blocked-reason case from
  *          MissionCard's SwapBlockedDialog logic. With rank-based mission filtering now
@@ -905,21 +914,33 @@ private fun MissionCard(
     // ── v6: SHOW SWAP BLOCKED DIALOG IF OPEN ─────────────────────────────────
     // Placed above the card Box alongside SwapConfirmDialog.
     if (showSwapBlockedDialog.value) {
-        // Determine the reason shown in SwapBlockedDialog.
-        // v8 (updated): Two cases — the old "difficulty >= 3 cannot swap" hard block has been
-        // removed. With rank-based mission filtering (v5 of MissionRepository), a user only
-        // sees missions appropriate for their rank level, so the difficulty window for swaps
-        // is already scoped to that rank. There is no longer a reason to permanently block
-        // swaps by raw difficulty number — rank progression is the gate, not a hardcoded number.
-        //   1. Already swapped today: used the daily swap — try again tomorrow.
-        //   2. No alternate found: no compatible mission exists in the current rank pool.
-        val blockedReason = when {
-            hasSwappedToday ->
+        // Determine the title and reason shown in SwapBlockedDialog.
+        // Priority order matters — difficulty must be checked FIRST so that even if the
+        // admin panel has set hasSwappedToday = true in the same session, a hard mission
+        // still gets the "Skipping is forbidden" message, not the "already swapped" message.
+        //
+        //   1. Difficulty >= 3 (hard mission)  → "Skipping is forbidden."
+        //      Hard missions cannot be swapped regardless of any other state.
+        //   2. Already swapped today           → "Swap used."
+        //      The user already spent their daily swap on a different mission.
+        //   3. No alternate found              → "No mission available."
+        //      No compatible mission exists in the current rank pool right now.
+        val (blockedTitle, blockedReason) = when {
+            mission.difficulty >= 3 -> Pair(
+                "Skipping is forbidden.",
+                "Hard missions cannot be skipped. You must face the challenge."
+            )
+            hasSwappedToday -> Pair(
+                "Swap unavailable.",
                 "You have already used your swap for today. Come back tomorrow with a fresh mission."
-            else ->
+            )
+            else -> Pair(
+                "Swap unavailable.",
                 "There is no compatible mission available to swap to right now. Face this one."
+            )
         }
         SwapBlockedDialog(
+            title     = blockedTitle,
             reason    = blockedReason,
             onDismiss = { showSwapBlockedDialog.value = false }
         )
@@ -1363,7 +1384,7 @@ private fun SwapConfirmDialog(
 /**
  * SwapBlockedDialog — shown when the user taps SWAP MISSION but no swap is available.
  *
- * NEW in v5 (original). Updated in v6.
+ * NEW in v5 (original). Updated in v6. Title made dynamic in v9.
  *
  * v5 behaviour: Always shown on any SWAP tap. Message was a generic motivational
  * block ("Skipping is forbidden...") because the swap was always blocked.
@@ -1376,15 +1397,22 @@ private fun SwapConfirmDialog(
  * message is contextual and informative rather than a generic motivational block.
  * The user deserves to know WHY they can't swap, not just that they can't.
  *
+ * v9 behaviour: Title is now dynamic (passed via [title] param). Hard-mission block
+ * (difficulty >= 3) shows "Skipping is forbidden." as the title. Other cases show
+ * "Swap unavailable." as before. This ensures the correct message is always shown
+ * regardless of hasSwappedToday state (admin-panel testing cannot mask the hard block).
+ *
  * There is still only ONE button ("I UNDERSTAND") — no escape hatch. The user
  * cannot override the difficulty gate or use a second swap. This is by design.
  *
- * @param reason    The specific reason the swap is blocked. Set by MissionCard based on
- *                  hasSwappedToday and alternateMission. Displayed as the dialog body text.
+ * @param title     The dialog heading. "Skipping is forbidden." for difficulty >= 3;
+ *                  "Swap unavailable." for all other cases.
+ * @param reason    The specific reason the swap is blocked. Displayed as the dialog body.
  * @param onDismiss Called when the user taps "I UNDERSTAND" or taps outside the dialog.
  */
 @Composable
 private fun SwapBlockedDialog(
+    title: String,
     reason: String,
     onDismiss: () -> Unit
 ) {
@@ -1394,10 +1422,11 @@ private fun SwapBlockedDialog(
         onDismissRequest = onDismiss,
 
         // ── DIALOG TITLE ─────────────────────────────────────────────────────
-        // Short, declarative. No question mark — this is a statement of fact.
+        // v9: Dynamic — "Skipping is forbidden." for hard missions,
+        //     "Swap unavailable." for all other blocked states.
         title = {
             Text(
-                text = "Swap unavailable.",
+                text = title,
                 color = ColorTextPrimary,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold
