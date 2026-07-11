@@ -1,127 +1,117 @@
 <!--
-  emblem_welcome.xml
-  Welcome Screen Identity Emblem — v2
+    emblem_welcome.xml  — v3
 
-  Design language: A gold flame. Fire. The start of something.
-  This is NOT a rank badge.
-    - No circular background.
-    - No rings, no crosshairs, no concentric circles.
-  All rank badges (Observer, Initiate, Challenger, Conqueror, Sovereign) are
-  circular icons. This emblem is a vertical flame shape — completely different
-  in silhouette, in meaning, and in visual language.
+    ─── WHAT CHANGED IN v3 ──────────────────────────────────────────────────────
 
-  The flame represents:
-    - Heat — the discomfort the app is built around.
-    - A starting point — fire begins a journey.
-    - Energy — not rank, not achievement, just raw starting potential.
+    Problem with v2 (gold flame):
+      The tall teardrop/flame shape was flagged as anatomically ambiguous — the
+      narrow base broadening into a rounded body with a pointed tip reads as
+      something other than a flame when the context (fire, heat) is not obvious.
+      The shape needs to be completely unambiguous at a glance.
 
-  Place this file at:
-    app/src/main/res/drawable/emblem_welcome.xml
+    What v3 does instead:
+      A NESTED DIAMOND (gem) motif — three concentric rotated squares:
+
+        1. Outer diamond  — bold gold outline, near-invisible warm fill.
+           Fills most of the viewport. Commands the space.
+
+        2. Middle diamond — thinner stroke in a slightly warmer/brighter gold.
+           Sits inside the outer, creating a gem-cut depth illusion.
+           The gap between outer and middle reads as a bevelled edge.
+
+        3. Centre diamond — small solid filled diamond at the exact centre.
+           Acts as the focal point / "stone" of the gem. Draws the eye inward.
+
+    WHY a diamond and not another shape:
+      • Pure geometry — cannot be misread as anything biological or symbolic
+        beyond what it is: a gem / diamond / rotated square.
+      • Completely distinct from all five rank badges:
+          Observer   → eye / iris shape
+          Initiate   → upward triangle
+          Challenger → shield
+          Conqueror  → crossbow
+          Sovereign  → crown
+        A diamond (rotated square) shares zero visual language with any of these.
+      • "Diamond" thematically fits "Mission: Uncomfortable" — a diamond forms
+        under pressure. The app is about applying pressure to yourself.
+      • Static shape with no circular elements → cannot be confused with the
+        circular glow rings used on the rank badges on DashboardScreen.
+
+    WHY no animation baked into the drawable:
+      All animation (entrance fade, scale, glow) is handled in WelcomeScreen.kt.
+      The drawable is a pure static shape so it can be reused or restyled without
+      touching the animation layer.
+
+    ─── COLOURS USED ────────────────────────────────────────────────────────────
+
+      #C8A84B  — ColorAccentGold  (outer diamond stroke, centre fill)
+      #DCB65C  — ColorHotGold     (middle diamond stroke — slightly warmer/brighter)
+      #1AC8A84B — 10% alpha gold fill on outer diamond (barely-there warmth, not
+                  opaque enough to read as a filled shape — keeps it feeling open)
+
+    ─── FILE LOCATION ───────────────────────────────────────────────────────────
+
+      app/src/main/res/drawable/emblem_welcome.xml
+
 -->
+
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="120dp"
-    android:height="120dp"
-    android:viewportWidth="200"
-    android:viewportHeight="200">
+    android:width="100dp"
+    android:height="100dp"
+    android:viewportWidth="100"
+    android:viewportHeight="100">
 
     <!--
-      ── OUTER FLAME BODY ──────────────────────────────────────────────────────
-      The main silhouette of the flame. Gold stroke, very faint warm fill.
-      Uses quadratic bezier curves to get the natural teardrop-like shape.
-
-      Path logic (starting at base centre, going counter-clockwise):
-        Base centre: (100, 175)
-        Left lower:  control (52, 152) → end (56, 118)   pulls wide then inward
-        Left mid:    control (60, 85)  → end (72, 65)    narrows toward tip
-        Left upper:  control (82, 42)  → end (100, 18)   arrives at tip
-        Right upper: control (118, 42) → end (128, 65)   mirrors left
-        Right mid:   control (140, 85) → end (144, 118)  mirrors left
-        Right lower: control (148, 152)→ end (100, 175)  back to base
+        ── 1. OUTER DIAMOND ──────────────────────────────────────────────────
+        The four corners sit 4dp from each edge of the viewport, so the shape
+        fills almost the entire canvas. Bold 2.5dp stroke at ColorAccentGold.
+        Fill is 10% alpha gold — just enough warmth to separate the inside from
+        the background without making it look like a solid shape.
+        strokeLineCap and strokeLineJoin set to "round" so the four points are
+        very slightly softened — avoids the harsh mechanical look of sharp mitre
+        joins while keeping the shape clearly angular.
     -->
     <path
-        android:fillColor="#221A0900"
+        android:pathData="M 50,4 L 96,50 L 50,96 L 4,50 Z"
+        android:fillColor="#1AC8A84B"
         android:strokeColor="#C8A84B"
-        android:strokeWidth="4"
-        android:pathData="
-            M100,175
-            Q52,152 56,118
-            Q60,85 72,65
-            Q82,42 100,18
-            Q118,42 128,65
-            Q140,85 144,118
-            Q148,152 100,175
-            Z" />
-
-    <!--
-      ── INNER FLAME ───────────────────────────────────────────────────────────
-      Smaller, same general shape, sits inside the outer flame.
-      Warmer gold, slightly more opaque — the hotter inner part of the fire.
-    -->
-    <path
-        android:fillColor="#33DCB65C"
-        android:strokeColor="#DCB65C"
         android:strokeWidth="2.5"
-        android:pathData="
-            M100,158
-            Q74,135 76,110
-            Q80,86 90,70
-            Q95,54 100,40
-            Q105,54 110,70
-            Q120,86 124,110
-            Q126,135 100,158
-            Z" />
-
-    <!--
-      ── FLAME CORE ────────────────────────────────────────────────────────────
-      The bright, hot centre of the flame. Near-white to gold gradient effect
-      approximated by layering a bright semi-transparent fill.
-      No stroke — just a soft bright shape that bleeds into the inner flame.
-    -->
-    <path
-        android:fillColor="#99FFF4CC"
-        android:pathData="
-            M100,138
-            Q88,116 90,103
-            Q95,87 100,72
-            Q105,87 110,103
-            Q112,116 100,138
-            Z" />
-
-    <!--
-      ── BASE HORIZONTAL LINE ──────────────────────────────────────────────────
-      A short decorative line at the base of the flame.
-      Acts as a "ground" — the flame rests on this, giving it weight
-      and preventing it from floating disconnected on the screen.
-    -->
-    <path
-        android:strokeColor="#C8A84B"
-        android:strokeWidth="3.5"
         android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+
+    <!--
+        ── 2. MIDDLE DIAMOND ─────────────────────────────────────────────────
+        Corners at 20% inset from each edge (20,50 / 50,20 / 80,50 / 50,80).
+        Thinner stroke (1.2dp) in ColorHotGold — slightly warmer and brighter
+        than the outer. The warmer inner ring creates a bevelled-edge illusion:
+        the space between outer and middle reads as a polished facet catching
+        more light than the outer face.
+        No fill — transparent interior so the centre diamond reads cleanly.
+        Stroke alpha 0.75 so it is clearly visible but subordinate to the outer.
+    -->
+    <path
+        android:pathData="M 50,20 L 80,50 L 50,80 L 20,50 Z"
         android:fillColor="#00000000"
-        android:pathData="M65,180 L135,180" />
+        android:strokeColor="#DCB65C"
+        android:strokeWidth="1.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeAlpha="0.75"/>
 
     <!--
-      ── TIP SPARKLE ───────────────────────────────────────────────────────────
-      A small bright dot at the very tip of the flame.
-      Represents the hottest, highest point — where the fire ends and light begins.
+        ── 3. CENTRE DIAMOND ─────────────────────────────────────────────────
+        A small solid gold diamond at the exact geometric centre (50,50).
+        Corner offsets of ±7 units give a diamond that is 14×14 units —
+        large enough to be clearly visible at 150dp but small enough to read as
+        a "stone" or focal point rather than another ring.
+        Solid fill in ColorHotGold. No stroke needed — the filled shape is
+        already crisp at this size.
+        This is the eye magnet: the viewer's gaze travels inward from the outer
+        diamond → middle ring → centre stone, mimicking the way a cut gem draws
+        the eye to its table facet.
     -->
     <path
-        android:fillColor="#FFF4CC"
-        android:pathData="M97,14 A3,3 0 1,0 103,14 A3,3 0 1,0 97,14 Z" />
-
-    <!--
-      ── SIDE SPARKLES ─────────────────────────────────────────────────────────
-      Two smaller accent dots flanking the tip.
-      Give the flame a sense of heat and energy without added complexity.
-    -->
-    <path
-        android:fillColor="#C8A84B"
-        android:fillAlpha="0.70"
-        android:pathData="M76,33 A2,2 0 1,0 80,33 A2,2 0 1,0 76,33 Z" />
-
-    <path
-        android:fillColor="#C8A84B"
-        android:fillAlpha="0.70"
-        android:pathData="M120,33 A2,2 0 1,0 124,33 A2,2 0 1,0 120,33 Z" />
+        android:pathData="M 50,43 L 57,50 L 50,57 L 43,50 Z"
+        android:fillColor="#DCB65C"/>
 
 </vector>

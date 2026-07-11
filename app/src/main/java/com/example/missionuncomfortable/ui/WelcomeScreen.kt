@@ -1,5 +1,5 @@
 /**
- * WelcomeScreen.kt  — v6
+ * WelcomeScreen.kt  — v7
  *
  * ─── WHAT CHANGED IN v4 ──────────────────────────────────────────────────────
  *
@@ -47,13 +47,7 @@
  *     • EMBLEM — reverted from canvas-drawn diamond back to emblem_welcome.xml,
  *       BUT the XML itself was redesigned. The old reticle (concentric circles,
  *       crosshair lines, diagonal ticks) still looked too much like a rank badge.
- *       The new emblem_welcome.xml is a gold FLAME — a tall, vertical shape with
- *       NO circular background and NO rings at all. It looks nothing like any of
- *       the five rank badges (Observer eye, Initiate triangle, Challenger shield,
- *       Conqueror crossbow, Sovereign crown). The flame represents:
- *         – Heat — the discomfort the app is built around.
- *         – A starting point — fire begins every journey.
- *         – Energy — raw starting potential, not a rank achievement.
+ *       The new emblem_welcome.xml was a gold FLAME.
  *     • ANIMATION — the spinning diamonds, counter-rotating geometry, and 8-ray
  *       system are gone. Replaced with a single soft gold glow ring that breathes
  *       slowly behind the flame (alpha 0.25 → 0.55 over 3 200 ms). Nothing
@@ -62,42 +56,58 @@
  *       two-line label:
  *         – "MISSION" (11sp, all-caps, gold, 5sp tracking — the category label)
  *         – "Uncomfortable" (28sp, bold, off-white — the app name itself)
- *       This mirrors the RANK LABEL → RANK NAME pattern used on the Dashboard
- *       (e.g. the small "RANK" label above "The Observer"). A new user can now
- *       read the screen and immediately understand what app they opened, with
- *       zero ambiguity.
  *     • TAGLINE — "Discomfort is the curriculum." removed entirely.
- *       The flame icon and the app name are enough. Every extra word is noise.
- *     • GOLD SEPARATOR — the thin horizontal accent line between the name and
- *       the button is kept. It provides visual breathing room and reinforces the
- *       gold palette without adding text.
- *     • clip(CircleShape) removed from the flame Image — a circular crop was
- *       cutting off the tip and the base of the flame silhouette. The Image now
- *       displays at its natural bounds (150dp) inside the 220dp glow container.
- *       Import for CircleShape removed as it is no longer referenced.
+ *     • clip(CircleShape) removed from the flame Image.
  *
  * ─── WHAT CHANGED IN v6 ──────────────────────────────────────────────────────
  *
- *   Problems carried over from the v5 delivery:
- *     1. ColorTextSecondary (0xFF8A8A8A) was still declared but never used —
- *        the tagline Text that referenced it was removed in v5, but the constant
- *        was accidentally left behind. Android Studio reported:
- *          Warning (102, 13): Property "ColorTextSecondary" is never used.
- *     2. The v5 code delivered as a paste-in replacement stripped out a large
- *        portion of the existing comments, violating the project commenting rules
- *        established in RankBadgeGlow.kt:
- *          "DO NOT remove any existing comment. If a comment is outdated, UPDATE it."
- *        This v6 file is built directly from the v4 source, with every comment
- *        preserved and updated rather than deleted.
+ *   Problems carried over from v5:
+ *     1. ColorTextSecondary was declared but never used — caused Android Studio
+ *        warning. Removed in v6.
+ *     2. v5 delivery stripped comments, violating project commenting rules.
+ *        v6 rebuilt from v4 source with every comment preserved.
  *
- *   Fixes in v6:
- *     • ColorTextSecondary constant removed. The removal is noted in the colour
- *       constants block below so a future reader understands why it is absent.
- *     • All canvas-drawing imports removed with comments explaining the reason —
- *       they are no longer needed because the canvas-drawn diamond is gone.
- *     • All comments from v4 are preserved and updated to reflect the v5/v6 state.
- *     • New code (flame emblem section, updated text section) written with the same
- *       comment density as the rest of the file.
+ * ─── WHAT CHANGED IN v7 ──────────────────────────────────────────────────────
+ *
+ *   Problems with v6:
+ *     1. The breathing glow loop (rememberInfiniteTransition, glowAlpha) ran
+ *        indefinitely — a slow alpha pulse cycling from 0.25 → 0.55 → 0.25 on
+ *        a 3 200 ms repeat. The user asked for a "cinematic welcome", meaning
+ *        things should REVEAL ONCE and then sit still. A perpetual loop is the
+ *        opposite of cinematic — it feels like a loading screen or a game lobby.
+ *     2. The button shimmer sweep (buttonShimmer, drawWithContent) also looped
+ *        indefinitely — a bright streak cycling across the gold surface every
+ *        3 000 ms. Same problem: it looks busy and restless, not calm and premium.
+ *     3. emblem_welcome.xml v2 (the gold flame) was flagged as anatomically
+ *        ambiguous. The teardrop silhouette reads as something other than a flame
+ *        without supporting context. Replaced in v3 of that file.
+ *
+ *   What v7 does:
+ *     • ALL LOOPING ANIMATIONS REMOVED:
+ *         – rememberInfiniteTransition removed entirely.
+ *         – glowAlpha removed. The glow behind the emblem is now a static circle
+ *           at a fixed alpha (0.38f) — always present, never moving.
+ *         – buttonShimmer removed. drawWithContent removed from the button.
+ *           The button is a plain solid gold rectangle. No sweep, no loop.
+ *     • ENTRANCE ANIMATIONS KEPT AND SLIGHTLY EXTENDED for cinematic weight:
+ *         – Emblem: 1 200 ms fade-in + scale-up from 0.90 → 1.00 (was 800 ms,
+ *           no scale). The scale-up gives a "materialise" feel — the gem appears
+ *           to grow out of nothing.
+ *         – Title: 900 ms fade-in + slide-up (was 600 ms). Heavier, more
+ *           deliberate. Delay increased to 450 ms after emblem starts.
+ *         – Button: 700 ms fade-in (was 500 ms). Delay 850 ms after title starts.
+ *     • EMBLEM — emblem_welcome.xml updated to v3 (nested gold diamond/gem).
+ *       The flame teardrop is gone. Three concentric rotated squares:
+ *         1. Outer diamond: bold gold outline, 10% alpha fill.
+ *         2. Middle diamond: thinner, slightly warmer gold — gem-cut bevel effect.
+ *         3. Centre diamond: small solid gold focal point ("the stone").
+ *       A diamond forms under pressure — thematically perfect for an app about
+ *       voluntary discomfort. Cannot be misread. Distinct from all rank badges.
+ *     • STATIC GLOW stays — a soft radial gradient behind the emblem that is
+ *       drawn once and holds. It gives the gem a sense of being lit from within
+ *       without any movement.
+ *     • BUTTON stays gold solid — no shimmer, but the entrance fade-in is enough
+ *       to make it feel dynamic when it first appears.
  *
  * ─── FILE LOCATION ───────────────────────────────────────────────────────────
  *
@@ -110,75 +120,77 @@ package com.example.missionuncomfortable.ui.welcome
 
 // ─── IMPORTS ──────────────────────────────────────────────────────────────────
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Image                          // v5: added — needed for the flame Image composable (was not needed in v4 which drew on Canvas)
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 // androidx.compose.foundation.shape.CircleShape — REMOVED in v5.
-//   The flame Image is no longer clipped to a circle. A circular crop was cutting
-//   off the tip and base of the flame silhouette, ruining the shape.
+//   The emblem Image is no longer clipped to a circle.
+// androidx.compose.animation.core.LinearEasing — REMOVED in v7.
+//   Was used by buttonShimmer (infiniteRepeatable, LinearEasing). The shimmer
+//   loop is gone in v7 — the button is a plain solid gold rectangle.
+// androidx.compose.animation.core.RepeatMode — REMOVED in v7.
+//   Was only used by the two infinite animations (glowAlpha, buttonShimmer).
+//   Both are gone. No InfiniteTransition remains in this file.
+// androidx.compose.animation.core.animateFloat — REMOVED in v7.
+//   Was the animateFloat delegate used inside rememberInfiniteTransition for
+//   glowAlpha and buttonShimmer. No infinite animations remain.
+// androidx.compose.animation.core.infiniteRepeatable — REMOVED in v7.
+//   Same reason — no infinite animations.
+// androidx.compose.animation.core.rememberInfiniteTransition — REMOVED in v7.
+//   The entire InfiniteTransition block is gone. Welcome screen now has
+//   zero looping animations. Entrance plays once; everything holds still.
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.drawWithContent
+// androidx.compose.ui.draw.drawWithContent — REMOVED in v7.
+//   Was used to draw the buttonShimmer streak on top of the button's gold
+//   background. The shimmer loop is gone, so drawWithContent is no longer needed.
+//   The button now uses a simple .background(ColorAccentGold) with no overlay.
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 // androidx.compose.ui.graphics.Path — REMOVED in v5.
-//   Was needed to build the diamond shape on Canvas. The canvas-drawn diamond
-//   is gone; emblem_welcome.xml renders the shape instead.
-// androidx.compose.ui.graphics.StrokeCap — REMOVED in v5.
-//   Was needed for the rounded line caps on the 8 radiant rays drawn in Canvas.
-//   No custom line drawing happens in this file any more.
-// androidx.compose.ui.graphics.drawscope.DrawScope — REMOVED in v5.
-//   The helper function drawDiamondPath that used DrawScope as a receiver was
-//   removed along with the canvas-drawn sigil. No DrawScope extension functions
-//   remain in this file.
-// androidx.compose.ui.graphics.drawscope.Stroke — REMOVED in v5.
-//   Was the stroke style for the diamond paths. No stroked canvas paths remain.
-// androidx.compose.ui.graphics.drawscope.rotate — REMOVED in v5.
-//   Was used to rotate the outer/inner diamonds and the light rays on Canvas.
-//   Nothing rotates in v5 — the glow behind the flame is a static radial shape
-//   that only breathes in alpha.
+//   Was needed to build the diamond shape on Canvas. Gone with canvas sigil.
+// androidx.compose.ui.graphics.StrokeCap — REMOVED in v5. Same reason.
+// androidx.compose.ui.graphics.drawscope.DrawScope — REMOVED in v5. Same reason.
+// androidx.compose.ui.graphics.drawscope.Stroke — REMOVED in v5. Same reason.
+// androidx.compose.ui.graphics.drawscope.rotate — REMOVED in v5. Same reason.
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.ContentScale                   // v5: added — needed to specify ContentScale.Fit for the flame Image
-import androidx.compose.ui.res.painterResource                   // v5: added — loads emblem_welcome.xml as a Painter for the Image composable
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.missionuncomfortable.R                        // v5: added — needed to reference R.drawable.emblem_welcome
+import com.example.missionuncomfortable.R
 import kotlinx.coroutines.delay
-// kotlin.math.cos — REMOVED in v5. Was used to compute the x-components of
-//   the 8 light ray endpoint positions on the canvas. No trigonometry needed
-//   now that the canvas-drawn sigil is gone.
-// kotlin.math.sin — REMOVED in v5. Same reason as cos above.
+// kotlin.math.cos — REMOVED in v5. Was used for canvas ray positions.
+// kotlin.math.sin — REMOVED in v5. Same reason.
 
 // ─── COLOURS ─────────────────────────────────────────────────────────────────
 
 private val ColorBackground    = Color(0xFF0D0D0D)
 private val ColorTextPrimary   = Color(0xFFE0E0E0)
 // ColorTextSecondary (0xFF8A8A8A) — REMOVED in v6.
-//   This constant was introduced in v1 and used for the tagline text and the
-//   "Discomfort is the curriculum." line. Both of those Text composables were
-//   removed in v5 because the screen is simpler without them. The constant
-//   was accidentally left behind in v5, which caused:
+//   Was used for the tagline "Discomfort is the curriculum." which was removed
+//   in v5. The constant was accidentally left behind in v5, causing:
 //     Warning (102, 13): Property "ColorTextSecondary" is never used.
-//   Removed here in v6 to clear the warning. If a secondary text colour is
-//   needed again in a future version, re-add it at that point.
+//   Removed in v6 to clear the warning.
 private val ColorAccentGold    = Color(0xFFC8A84B)
-private val ColorHotGold       = Color(0xFFDCB65C)
+
+// ColorHotGold — REMOVED in v7.
+//   Was used as the inner ring colour in the breathing glow (drawBehind on the
+//   emblem Box). The glow ring used ColorHotGold at glowAlpha * 0.70f for the
+//   peak of the radial gradient. Since glowAlpha (and the entire
+//   rememberInfiniteTransition block) is gone in v7, and the static glow only
+//   uses ColorAccentGold at fixed alphas, ColorHotGold is no longer referenced.
 
 // ─── ROOT COMPOSABLE ─────────────────────────────────────────────────────────
 
@@ -193,87 +205,98 @@ fun WelcomeScreen(onStartJourney: () -> Unit) {
 
     // ── ENTRANCE ANIMATION FLAGS ─────────────────────────────────────────────
     // v5: renamed showSigil → showEmblem. "Sigil" referred to the canvas-drawn
-    // diamond which is gone. "Emblem" is the correct term for the flame Image
-    // loaded from emblem_welcome.xml. Logic is identical — only the name changed.
+    // diamond which is gone. "Emblem" is the correct term for the image loaded
+    // from emblem_welcome.xml. Logic is identical — only the name changed.
     var showEmblem by remember { mutableStateOf(false) }
     var showTitle  by remember { mutableStateOf(false) }
     var showButton by remember { mutableStateOf(false) }
 
+    // v7: delays slightly extended for cinematic weight.
+    //   Emblem starts immediately on mount (unchanged).
+    //   Title: 450 ms after mount (was 350 ms).
+    //   Button: 850 ms after title starts (was 280 ms).
+    // The entrance is the only animation on this screen. It plays once and stops.
+    // Nothing loops. Nothing pulses. The screen "arrives" and then holds still.
     LaunchedEffect(Unit) {
-        showEmblem = true                          // Flame fades in immediately on mount
-        delay(350L); showTitle  = true             // App name fades in 350 ms later
-        delay(280L); showButton = true             // Button fades in 280 ms after title
+        showEmblem = true
+        delay(450L); showTitle  = true
+        delay(850L); showButton = true
     }
 
-    // animateFloatAsState converts each boolean flip into a smooth eased transition.
-    // v5: "sigilAlpha" and "sigilSlide" variable names kept intentionally — renaming
-    // would not change behaviour and would diff-noise any future code review.
-    // They now drive the flame Image's entrance, not the canvas diamond's entrance.
+    // ── ENTRANCE FLOAT STATES ────────────────────────────────────────────────
+    // animateFloatAsState converts each boolean flip into a smooth eased
+    // transition. These fire ONCE when the booleans above flip to true.
+    // They do NOT loop or repeat.
+
+    // v7: sigilAlpha duration extended to 1 200 ms (was 800 ms) so the gem
+    // takes longer to fully materialise — weight matches the cinematic intent.
     val sigilAlpha  by animateFloatAsState(
-        targetValue = if (showEmblem)  1f else 0f,
-        animationSpec = tween(800, easing = FastOutSlowInEasing), label = "sigilAlpha"
+        targetValue    = if (showEmblem) 1f else 0f,
+        animationSpec  = tween(1200, easing = FastOutSlowInEasing),
+        label          = "sigilAlpha"
     )
+    // v5: "sigilSlide" kept as a name even though it now drives the emblem Image
+    // instead of the canvas diamond. Slide-up from 50px offset, same as before.
     val sigilSlide  by animateFloatAsState(
-        targetValue = if (showEmblem)  0f else 50f,
-        animationSpec = tween(800, easing = FastOutSlowInEasing), label = "sigilSlide"
+        targetValue    = if (showEmblem) 0f else 50f,
+        animationSpec  = tween(1200, easing = FastOutSlowInEasing),
+        label          = "sigilSlide"
     )
+
+    // v7: sigilScale added. Animates from 0.90 → 1.00 as the emblem appears.
+    // WHY: A plain fade-in makes the gem "pop in" which feels abrupt at 1 200 ms.
+    // A simultaneous scale-up from 90% makes it feel like the gem is materialising
+    // out of darkness — growing into existence — which reads as cinematic.
+    // 0.90 as the start value is subtle enough not to look like a "zoom in"
+    // effect; it just removes the jarring appearance of a sudden full-size object.
+    val sigilScale  by animateFloatAsState(
+        targetValue    = if (showEmblem) 1f else 0.90f,
+        animationSpec  = tween(1200, easing = FastOutSlowInEasing),
+        label          = "sigilScale"
+    )
+
+    // v7: titleAlpha duration extended to 900 ms (was 600 ms).
     val titleAlpha  by animateFloatAsState(
-        targetValue = if (showTitle)  1f else 0f,
-        animationSpec = tween(600, easing = FastOutSlowInEasing), label = "titleAlpha"
+        targetValue    = if (showTitle) 1f else 0f,
+        animationSpec  = tween(900, easing = FastOutSlowInEasing),
+        label          = "titleAlpha"
     )
     val titleSlide  by animateFloatAsState(
-        targetValue = if (showTitle)  0f else 28f,
-        animationSpec = tween(600, easing = FastOutSlowInEasing), label = "titleSlide"
+        targetValue    = if (showTitle) 0f else 28f,
+        animationSpec  = tween(900, easing = FastOutSlowInEasing),
+        label          = "titleSlide"
     )
+
+    // v7: buttonAlpha duration extended to 700 ms (was 500 ms).
     val buttonAlpha by animateFloatAsState(
-        targetValue = if (showButton) 1f else 0f,
-        animationSpec = tween(500, easing = FastOutSlowInEasing), label = "buttonAlpha"
+        targetValue    = if (showButton) 1f else 0f,
+        animationSpec  = tween(700, easing = FastOutSlowInEasing),
+        label          = "buttonAlpha"
     )
 
-    // ── CONTINUOUS ANIMATIONS ────────────────────────────────────────────────
-    val infiniteTransition = rememberInfiniteTransition(label = "WelcomeLoop")
-
-    // v5 REMOVED — outerDiamondAngle:
-    //   Drove the clockwise rotation of the outer diamond (full revolution in 20 s).
-    //   Gone because the canvas-drawn rotating diamond is gone.
-
-    // v5 REMOVED — innerDiamondAngle:
-    //   Drove the counter-clockwise rotation of the inner diamond (14 s).
-    //   Gone for the same reason.
-
-    // v5 REMOVED — rayAngle:
-    //   Drove the slow rotation of the 8 radiant light rays (18 s).
-    //   Gone because no light rays are drawn in v5.
-
-    // v5 REMOVED — orbAlpha:
-    //   Drove the pulsing brightness of the centre orb (1 800 ms half-cycle).
-    //   Gone because there is no centre orb in v5 — the flame Image has its
-    //   own internal bright core baked into the drawable.
-
-    // Glow ring: the single soft gold halo behind the flame breathes slowly.
-    // v5: "glowAlpha" was previously the outer glow circle behind the diamond sigil
-    // (0.25 → 0.55, 3 200 ms). In v5, this same variable is repurposed as the
-    // breathing pulse for the glow ring behind the flame. The range and duration
-    // are kept identical — the welcome screen should feel calm, not urgent.
-    // Nothing rotates. This is the ONLY continuous animation on the emblem.
-    val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.25f, targetValue = 0.55f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(3200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ), label = "GlowAlpha"
-    )
-
-    // CTA button shimmer sweep — unchanged from v4.
-    // A narrow bright streak that sweeps left→right across the gold surface
-    // on a 3 000 ms loop. Reads as polished metal catching light, not a loading bar.
-    val buttonShimmer by infiniteTransition.animateFloat(
-        initialValue = -0.5f, targetValue = 1.5f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(3000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ), label = "ButtonShimmer"
-    )
+    // v7 REMOVED — rememberInfiniteTransition ("WelcomeLoop"):
+    //   The entire InfiniteTransition block and both of its child animations
+    //   are gone. The welcome screen now has ZERO looping animations.
+    //
+    //   WHY removed:
+    //     The user asked for a "cinematic welcome". In a film, a title card
+    //     appears, settles, and holds. It does not pulse or shimmer indefinitely.
+    //     A perpetual glow loop or shimmer sweep makes the screen feel like a
+    //     game lobby or a loading screen — the opposite of cinematic.
+    //     Cinematic = one dramatic entrance, then stillness. The entrance
+    //     animations above handle the drama. After they complete, everything rests.
+    //
+    // v7 REMOVED — glowAlpha (0.25 → 0.55, 3 200 ms repeat, Reverse):
+    //   Was the breathing pulse of the glow ring behind the flame emblem.
+    //   Replaced by a static glow at a fixed alpha of 0.38f — present from
+    //   the moment the emblem fades in, never moving. See the drawBehind block
+    //   below for the static glow implementation.
+    //
+    // v7 REMOVED — buttonShimmer (-0.5 → 1.5, 3 000 ms repeat, Restart):
+    //   Was the bright streak that swept left→right across the gold button
+    //   surface on a 3 000 ms loop. Replaced by a plain solid gold button.
+    //   The button's entrance fade-in (buttonAlpha, 700 ms) provides all the
+    //   visual interest needed when the button first appears. After that, it rests.
 
     // ── LAYOUT ──────────────────────────────────────────────────────────────
     Box(
@@ -284,9 +307,10 @@ fun WelcomeScreen(onStartJourney: () -> Unit) {
     ) {
 
         // Atmospheric background: warm faint spotlight behind the emblem.
-        // A radial gradient centred on the upper half of the screen (38% from top)
-        // so the background feels like a hidden light source is illuminating the
-        // flame from within — not just a flat black void.
+        // A radial gradient centred on the upper half of the screen (38% from
+        // top) so the background feels like a hidden light source is illuminating
+        // the gem from within — not just a flat black void.
+        // Unchanged from v5/v6.
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -312,39 +336,39 @@ fun WelcomeScreen(onStartJourney: () -> Unit) {
                 .padding(horizontal = 40.dp)
         ) {
 
-            // ── FLAME EMBLEM ──────────────────────────────────────────────
-            // v5: replaced the canvas-drawn diamond sigil with emblem_welcome.xml,
-            // which was simultaneously redesigned from a targeting reticle (circles,
-            // crosshair) to a gold FLAME (see emblem_welcome.xml header for full
-            // design reasoning). The Image is loaded via painterResource.
+            // ── GEM EMBLEM ───────────────────────────────────────────────────
+            // v7: emblem_welcome.xml redesigned to v3 — a nested-diamond gem
+            // motif (three concentric rotated squares). See emblem_welcome.xml
+            // for full design reasoning.
             //
-            // WHY a Box wrapping the Image instead of just a plain Image:
-            //   The drawBehind modifier draws the glow ring on the CONTAINER's
-            //   background — the 220dp Box — not on the Image itself. This gives
-            //   the glow room to breathe outside the Image's bounds without being
-            //   clipped. The Image (150dp) sits centred inside the container (220dp),
-            //   leaving 35dp of glow room on each side.
+            // WHY a Box wrapping the Image:
+            //   The drawBehind modifier on the Box draws the static glow behind
+            //   the gem on the CONTAINER's background layer, giving the glow room
+            //   to breathe outside the Image's bounds without clipping. The Image
+            //   (150dp) is centred inside the container (220dp), leaving 35dp of
+            //   glow room on each side.
             //
             // WHY 220dp container / 150dp Image:
-            //   220dp provides enough radius for the glow ring to peak just outside
-            //   the flame's widest point and fade to nothing at the container's edge.
-            //   150dp for the Image is sized so the flame fills most of the container
-            //   while still leaving glow room — 140dp (v4's value) was used when a
-            //   clip(CircleShape) was cropping it; 150dp makes better use of the
-            //   space now that the clip is gone.
+            //   220dp provides enough radius for the glow to peak just outside
+            //   the gem's outermost point and fade to nothing at the edge.
+            //   150dp for the Image sizes the gem to fill most of the container
+            //   while still leaving visible glow room around it.
             //
-            // WHY clip(CircleShape) is REMOVED:
-            //   The flame is a TALL vertical shape. Clipping it to a circle crops
-            //   the tip at the top and the decorative base line at the bottom,
-            //   completely destroying the silhouette that makes it read as a flame
-            //   and not a circular badge. No clip is applied in v5+.
+            // WHY no clip modifier:
+            //   The diamond/gem shape is tall AND wide. Clipping to any shape
+            //   (circle, rounded rect) would crop the four pointed corners of the
+            //   outer diamond, making it look like a blob. No clip is applied.
+            //
+            // v7: graphicsLayer now includes scaleX and scaleY (sigilScale)
+            //   in addition to alpha and translationY. This gives the gem the
+            //   "materialise" entrance described in the CHANGELOG above.
             //
             // Visual layers (bottom to top):
-            //   1. Wide outer glow halo — very soft, breathes via glowAlpha
-            //   2. Tighter inner glow ring — peaks at the flame's midsection width
-            //   3. The flame Image itself, centred on top of the glow
+            //   1. Static glow halo — soft gold radial gradient, fixed alpha,
+            //      no animation. Present once the emblem fades in; never moves.
+            //   2. The gem Image itself, centred on top of the glow.
             val containerSize = 220.dp
-            val imageSize     = 150.dp   // v5: was 140dp with clip(CircleShape); 150dp without clip
+            val imageSize     = 150.dp
 
             Box(
                 contentAlignment = Alignment.Center,
@@ -352,49 +376,48 @@ fun WelcomeScreen(onStartJourney: () -> Unit) {
                     .size(containerSize)
                     .graphicsLayer {
                         alpha        = sigilAlpha    // Entrance: fade in from 0
-                        translationY = sigilSlide    // Entrance: slide up from 50px offset
+                        translationY = sigilSlide    // Entrance: slide up from 50px
+                        scaleX       = sigilScale    // v7: materialise from 90%
+                        scaleY       = sigilScale    // v7: uniform scale on both axes
                     }
                     .drawBehind {
                         val r = size.minDimension / 2f
 
-                        // ── 1. WIDE OUTER ATMOSPHERIC GLOW ──────────────────
-                        // A soft radial gradient that fills the container — makes
-                        // the flame feel like it is emanating light rather than just
-                        // sitting in darkness. Outer edge fades completely to
-                        // transparent so there is no hard boundary visible.
-                        // Peak alpha is glowAlpha * 0.55f on the inner stop and
-                        // glowAlpha * 0.18f on the mid stop — very low intentionally.
-                        // This is atmosphere, not a spotlight.
+                        // ── STATIC OUTER ATMOSPHERIC GLOW ───────────────────
+                        // v7: replaces the animated glowAlpha gradient.
+                        // Fixed alpha of 0.22f on the inner stop, 0.08f mid.
+                        // The glow is always at this brightness — it does not
+                        // breathe or pulse. It reads as the gem casting a soft
+                        // warm light onto the dark background, like a lit jewel
+                        // in a dark room. Static light is more cinematic than
+                        // pulsing light.
                         drawCircle(
                             brush = Brush.radialGradient(
                                 colors = listOf(
-                                    ColorAccentGold.copy(alpha = glowAlpha * 0.55f),
-                                    ColorAccentGold.copy(alpha = glowAlpha * 0.18f),
+                                    ColorAccentGold.copy(alpha = 0.22f),
+                                    ColorAccentGold.copy(alpha = 0.08f),
                                     Color.Transparent
                                 ),
                                 center = center,
-                                radius = r * 0.85f
+                                radius = r * 0.90f
                             ),
-                            radius = r * 0.85f
+                            radius = r * 0.90f
                         )
 
-                        // ── 2. TIGHTER INNER RING JUST OUTSIDE THE FLAME ────
-                        // v5: this replaces all the canvas diamond geometry.
-                        // A ring whose peak brightness sits at ~60% of the container
-                        // radius — which corresponds to approximately the widest
-                        // point of the flame silhouette in emblem_welcome.xml.
-                        // The ring fades back to transparent before and after its
-                        // peak, so it reads as a rim of warm light around the flame's
-                        // body, not as a circle drawn on screen.
-                        // ColorHotGold (warmer gold) is used here so the inner ring
-                        // reads slightly hotter/brighter than the outer halo —
-                        // the same layering principle used in RankBadgeGlow.kt.
+                        // ── STATIC INNER RIM GLOW ────────────────────────────
+                        // v7: replaces the animated inner ring (ColorHotGold,
+                        // glowAlpha * 0.70f). Now a fixed alpha 0.28f ring.
+                        // Peaks at ~60% of the container radius, which lines up
+                        // with the outer diamond's edge in emblem_welcome.xml.
+                        // The ring fades to transparent before and after its peak
+                        // so it reads as a rim of light around the gem's face,
+                        // not a drawn circle.
                         drawCircle(
                             brush = Brush.radialGradient(
                                 colorStops = arrayOf(
                                     0.00f to Color.Transparent,
-                                    0.50f to Color.Transparent,
-                                    0.60f to ColorHotGold.copy(alpha = glowAlpha * 0.70f),
+                                    0.48f to Color.Transparent,
+                                    0.60f to ColorAccentGold.copy(alpha = 0.28f),
                                     1.00f to Color.Transparent
                                 ),
                                 center = center,
@@ -404,15 +427,13 @@ fun WelcomeScreen(onStartJourney: () -> Unit) {
                         )
                     }
             ) {
-                // ── 3. FLAME IMAGE ────────────────────────────────────────
-                // Loads emblem_welcome.xml (the gold flame drawable) as a
-                // Compose Image. ContentScale.Fit preserves the flame's
-                // aspect ratio so it is never stretched or squashed.
-                // No clip modifier — see the WHY comment on clip(CircleShape)
-                // above.
+                // ── GEM IMAGE ────────────────────────────────────────────────
+                // Loads emblem_welcome.xml v3 (nested diamond gem) as a Compose
+                // Image. ContentScale.Fit preserves the shape's aspect ratio.
+                // No clip modifier — see WHY above.
                 Image(
                     painter            = painterResource(id = R.drawable.emblem_welcome),
-                    contentDescription = "Mission Uncomfortable flame emblem",
+                    contentDescription = "Mission Uncomfortable gem emblem",
                     contentScale       = ContentScale.Fit,
                     modifier           = Modifier.size(imageSize)
                 )
@@ -420,28 +441,19 @@ fun WelcomeScreen(onStartJourney: () -> Unit) {
 
             Spacer(modifier = Modifier.height(44.dp))
 
-            // ── APP NAME ──────────────────────────────────────────────────
-            // v5: replaced the single word "UNCOMFORTABLE" with the full app name
-            // displayed as a two-line label — the same pattern used for rank names
-            // on the Dashboard.
+            // ── APP NAME ──────────────────────────────────────────────────────
+            // v5: replaced lone word "UNCOMFORTABLE" with the full app name as a
+            // two-line label — same pattern as RANK LABEL → RANK NAME on Dashboard.
+            // Unchanged from v5/v6.
             //
             // WHY "UNCOMFORTABLE" alone was wrong:
-            //   A brand-new user has zero context. The word alone reads as a
-            //   philosophical statement or a description of a feeling, not as an
-            //   app name. "What is this app? Why does it just say UNCOMFORTABLE?"
+            //   A brand-new user has zero context. It reads as a philosophical
+            //   statement, not an app name.
             //
-            // WHY the two-line pattern fixes it:
+            // WHY the two-line pattern works:
             //   "MISSION" (small gold label, heavy tracking) → type/category
             //   "Uncomfortable" (large off-white, bold) → the specific name
-            //   Together they read instantly as: "This is an app called Mission
-            //   Uncomfortable." Same pattern as "RANK" → "The Observer" on the
-            //   Dashboard. Familiar visual grammar for returning users; clear for
-            //   new users.
-            //
-            // WHY mixed case "Uncomfortable" instead of "UNCOMFORTABLE":
-            //   Mixed case reads as a proper name (which it is).
-            //   All-caps reads as a shout or a warning. The v4 design was
-            //   accidentally intimidating rather than welcoming.
+            //   Together: "This is Mission Uncomfortable." Zero ambiguity.
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.graphicsLayer {
@@ -450,8 +462,8 @@ fun WelcomeScreen(onStartJourney: () -> Unit) {
                 }
             ) {
                 // "MISSION" — the small gold category label.
-                // 5sp letter-spacing makes it read as a stamped/engraved label,
-                // matching the aesthetic of the Dashboard's rank section headers.
+                // 5sp letter-spacing reads as a stamped/engraved label,
+                // matching the Dashboard's rank section headers.
                 Text(
                     text          = "MISSION",
                     color         = ColorAccentGold.copy(alpha = 0.85f),
@@ -465,7 +477,7 @@ fun WelcomeScreen(onStartJourney: () -> Unit) {
 
                 // "Uncomfortable" — the app name, full brightness, bold.
                 // Mixed case so it reads as a proper name, not a declaration.
-                // 0.5sp tracking to prevent letters from feeling cramped at 28sp.
+                // 0.5sp tracking prevents letters feeling cramped at 28sp.
                 Text(
                     text          = "Uncomfortable",
                     color         = ColorTextPrimary,
@@ -478,9 +490,8 @@ fun WelcomeScreen(onStartJourney: () -> Unit) {
                 Spacer(modifier = Modifier.height(14.dp))
 
                 // Gold separator — thin horizontal accent line below the name.
-                // v5: kept from v4. Provides visual breathing room between the
-                // name and the button gap, and reinforces the gold accent palette
-                // without adding any text.
+                // v5: kept from v4. Breathing room between name and button.
+                // Reinforces gold palette without adding text.
                 Box(
                     modifier = Modifier
                         .width(56.dp)
@@ -499,11 +510,16 @@ fun WelcomeScreen(onStartJourney: () -> Unit) {
 
             Spacer(modifier = Modifier.height(52.dp))
 
-            // ── CTA BUTTON ────────────────────────────────────────────────
-            // Gold fill + sweeping shimmer streak = polished metal feel.
-            // Unchanged from v4. The shimmer sweep travels left→right using the
-            // buttonShimmer value, drawn as a drawWithContent overlay on top of
-            // the gold background so it doesn't need a separate layer composable.
+            // ── CTA BUTTON ────────────────────────────────────────────────────
+            // v7: the button is now a PLAIN SOLID GOLD rectangle.
+            //   drawWithContent and the buttonShimmer sweep are gone.
+            //   The shimmer loop made the button look restless — like a UI
+            //   element waiting for interaction rather than a calm invitation.
+            //   The button's entrance fade-in (buttonAlpha, 700 ms) provides all
+            //   the visual impact it needs at first appearance. After the fade
+            //   completes, the button holds still. Clean. Deliberate. Cinematic.
+            //
+            // The .clickable modifier and onStartJourney callback are unchanged.
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
@@ -512,32 +528,11 @@ fun WelcomeScreen(onStartJourney: () -> Unit) {
                     .graphicsLayer { alpha = buttonAlpha }
                     .clip(RoundedCornerShape(10.dp))
                     .background(ColorAccentGold)
-                    .drawWithContent {
-                        drawContent()   // Draw the "BEGIN YOUR JOURNEY" label first
-                        // Shimmer overlay: a narrow bright streak at the current
-                        // position drives by buttonShimmer (-0.5 → 1.5 of width).
-                        // Starting before 0 and ending after 1 ensures the streak
-                        // enters and exits smoothly from off-screen rather than
-                        // popping into existence at the button's edge.
-                        val shimmerStartX = size.width * buttonShimmer
-                        val shimmerWidth  = size.width * 0.38f
-                        drawRect(
-                            brush = Brush.horizontalGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    Color.White.copy(alpha = 0.20f),
-                                    Color.Transparent
-                                ),
-                                startX = shimmerStartX,
-                                endX   = shimmerStartX + shimmerWidth
-                            )
-                        )
-                    }
                     .clickable(onClick = onStartJourney)
             ) {
                 Text(
                     text          = "BEGIN YOUR JOURNEY",
-                    color         = Color(0xFF0D0D0D),   // Near-black on gold — maximum contrast
+                    color         = Color(0xFF0D0D0D),   // Near-black on gold — max contrast
                     fontSize      = 13.sp,
                     fontWeight    = FontWeight.Bold,
                     letterSpacing = 1.5.sp
@@ -545,13 +540,13 @@ fun WelcomeScreen(onStartJourney: () -> Unit) {
             }
 
             // v5 REMOVED — the single faint tagline Text:
-            //   text = "Discomfort is the curriculum."
+            //   text  = "Discomfort is the curriculum."
             //   color = ColorTextSecondary.copy(alpha = 0.40f)
             //
             // WHY removed:
             //   The tagline was already "one line, very faint, almost invisible"
             //   (per the v4 comment). If it's that close to invisible, it adds
-            //   no information — it's just noise. The flame emblem and the app
+            //   no information — it's just noise. The gem emblem and the app
             //   name communicate the same idea better and without words.
             //   ColorTextSecondary was also removed in v6 since this was its
             //   only remaining usage.
