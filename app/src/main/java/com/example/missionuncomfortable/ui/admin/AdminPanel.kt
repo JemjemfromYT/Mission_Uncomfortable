@@ -78,6 +78,13 @@
  *            • RESET SWAP FLAG (re-enables the in-app SWAP MISSION button for today)
  *          Added KEY_HAS_SWAPPED_TODAY and KEY_MISSION_DATE constants (synced from ViewModel).
  *          Added import of MissionRepository (data object — not a ViewModel, safe to import).
+ *
+ *   v3 — WARNING CLEANUP (Android Studio build output).
+ *          All prefs.edit().putX().commit() and manual editor.commit() patterns converted
+ *          to the KTX prefs.edit { putX() } extension (apply() semantics, background write).
+ *          Added import androidx.core.content.edit for the KTX extension function.
+ *          KEY_MISSION_DATE annotated @Suppress("unused") — constant is intentionally kept
+ *          for cross-reference/sync documentation even though AdminPanel does not use it.
  */
 
 package com.example.missionuncomfortable.ui.admin
@@ -104,6 +111,10 @@ import androidx.compose.ui.unit.sp
 // MissionRepository is a data object, not a ViewModel class, so this import is safe
 // and does not violate the AdminPanel-has-no-ViewModel-dependency rule.
 import com.example.missionuncomfortable.data.MissionRepository
+// KTX SharedPreferences extension — provides prefs.edit { putX() } syntax with apply() semantics.
+// This eliminates the boilerplate val editor = prefs.edit(); editor.putX(); editor.commit() pattern
+// and resolves Android Studio warnings about "use KTX extension" and "prefer apply() over commit()".
+import androidx.core.content.edit
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SHAREDPREFERENCES KEY CONSTANTS
@@ -142,7 +153,12 @@ private const val KEY_HISTORY_JSON     = "mission_history_json"
 /** Boolean — true when the user has already used their one daily swap. */
 private const val KEY_HAS_SWAPPED_TODAY = "has_swapped_today"
 
-/** String "yyyy-MM-dd" — the date KEY_MISSION_ID was assigned. Not modified on swap. */
+/** String "yyyy-MM-dd" — the date KEY_MISSION_ID was assigned. Not modified on swap.
+ *  Kept for sync documentation — AdminPanel does not read or write the mission date directly.
+ *  Suppressed: this constant is intentionally declared here even though AdminPanel never reads
+ *  it, because all SharedPreferences keys are duplicated from DashboardViewModel for
+ *  cross-reference. Remove the suppress only if you actively use this key below. */
+@Suppress("unused")
 private const val KEY_MISSION_DATE     = "mission_date_today"
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -262,12 +278,12 @@ fun AdminPanel(
                 // so a different mission can be selected.
                 // Effect: close the panel → ViewModel.onRefresh() → new mission appears.
                 AdminActionButton("SKIP TO NEXT DAY") {
-                    val editor = prefs.edit()
-                    editor.putString(KEY_LAST_COMPLETED,   "2000-01-01")  // Far past = always new day
-                    editor.putString(KEY_MISSION_STATUS,   "ACTIVE")      // Reset status
-                    editor.remove(KEY_MISSION_ID)                          // Force new mission selection
-                    editor.putString(KEY_LAST_STREAK_DATE, "2000-01-01")  // Allow streak to increment
-                    editor.commit()
+                    prefs.edit {
+                        putString(KEY_LAST_COMPLETED,   "2000-01-01")  // Far past = always new day
+                        putString(KEY_MISSION_STATUS,   "ACTIVE")      // Reset status
+                        remove(KEY_MISSION_ID)                          // Force new mission selection
+                        putString(KEY_LAST_STREAK_DATE, "2000-01-01")  // Allow streak to increment
+                    }
                     displayDate   = "2000-01-01"
                     displayStatus = "ACTIVE"
                     feedback = "✓ Day skipped. Close panel — Dashboard will load a new mission."
@@ -280,7 +296,7 @@ fun AdminPanel(
                 // Useful if you got stuck in IN_PROGRESS or COMPLETED mid-test
                 // and want to see the ACCEPT button again without a day skip.
                 AdminActionButton("FORCE STATUS → ACTIVE") {
-                    prefs.edit().putString(KEY_MISSION_STATUS, "ACTIVE").commit()
+                    prefs.edit { putString(KEY_MISSION_STATUS, "ACTIVE") }
                     displayStatus = "ACTIVE"
                     feedback = "✓ Status reset to ACTIVE. Close panel to see the ACCEPT button."
                 }
@@ -311,11 +327,11 @@ fun AdminPanel(
                     if (candidates.isNotEmpty()) {
                         // Pick a random candidate from the full eligible list.
                         val newMission = candidates.random()
-                        val editor = prefs.edit()
-                        editor.putString(KEY_MISSION_ID, newMission.id)      // Replace active mission
-                        editor.putString(KEY_MISSION_STATUS, "ACTIVE")       // Reset status so ACCEPT is shown
-                        editor.putBoolean(KEY_HAS_SWAPPED_TODAY, true)       // Consume daily swap slot
-                        editor.commit()
+                        prefs.edit {
+                            putString(KEY_MISSION_ID, newMission.id)      // Replace active mission
+                            putString(KEY_MISSION_STATUS, "ACTIVE")       // Reset status so ACCEPT is shown
+                            putBoolean(KEY_HAS_SWAPPED_TODAY, true)       // Consume daily swap slot
+                        }
                         displayStatus = "ACTIVE"
                         feedback = "✓ Mission swapped to '${newMission.title}' (${newMission.id}). Close panel to see the new mission."
                     } else {
@@ -332,11 +348,11 @@ fun AdminPanel(
                 AdminActionButton("SWAP TO DIFFICULTY 1  (first available mission)") {
                     val newMission = MissionRepository.ALL_MISSIONS.firstOrNull { it.difficulty == 1 }
                     if (newMission != null) {
-                        prefs.edit()
-                            .putString(KEY_MISSION_ID, newMission.id)
-                            .putString(KEY_MISSION_STATUS, "ACTIVE")
-                            .putBoolean(KEY_HAS_SWAPPED_TODAY, true)
-                            .commit()
+                        prefs.edit {
+                            putString(KEY_MISSION_ID, newMission.id)
+                            putString(KEY_MISSION_STATUS, "ACTIVE")
+                            putBoolean(KEY_HAS_SWAPPED_TODAY, true)
+                        }
                         displayStatus = "ACTIVE"
                         feedback = "✓ Swapped to difficulty-1 mission '${newMission.title}'. Close panel."
                     } else {
@@ -349,11 +365,11 @@ fun AdminPanel(
                 AdminActionButton("SWAP TO DIFFICULTY 3  (first available mission)") {
                     val newMission = MissionRepository.ALL_MISSIONS.firstOrNull { it.difficulty == 3 }
                     if (newMission != null) {
-                        prefs.edit()
-                            .putString(KEY_MISSION_ID, newMission.id)
-                            .putString(KEY_MISSION_STATUS, "ACTIVE")
-                            .putBoolean(KEY_HAS_SWAPPED_TODAY, true)
-                            .commit()
+                        prefs.edit {
+                            putString(KEY_MISSION_ID, newMission.id)
+                            putString(KEY_MISSION_STATUS, "ACTIVE")
+                            putBoolean(KEY_HAS_SWAPPED_TODAY, true)
+                        }
                         displayStatus = "ACTIVE"
                         feedback = "✓ Swapped to difficulty-3 mission '${newMission.title}'. Close panel."
                     } else {
@@ -366,11 +382,11 @@ fun AdminPanel(
                 AdminActionButton("SWAP TO DIFFICULTY 5  (first available mission)") {
                     val newMission = MissionRepository.ALL_MISSIONS.firstOrNull { it.difficulty == 5 }
                     if (newMission != null) {
-                        prefs.edit()
-                            .putString(KEY_MISSION_ID, newMission.id)
-                            .putString(KEY_MISSION_STATUS, "ACTIVE")
-                            .putBoolean(KEY_HAS_SWAPPED_TODAY, true)
-                            .commit()
+                        prefs.edit {
+                            putString(KEY_MISSION_ID, newMission.id)
+                            putString(KEY_MISSION_STATUS, "ACTIVE")
+                            putBoolean(KEY_HAS_SWAPPED_TODAY, true)
+                        }
                         displayStatus = "ACTIVE"
                         feedback = "✓ Swapped to difficulty-5 mission '${newMission.title}'. Close panel."
                     } else {
@@ -384,7 +400,7 @@ fun AdminPanel(
                 // use the normal in-app swap button again today. Useful for testing the
                 // swap confirmation dialog flow without needing to skip to the next day.
                 AdminActionButton("RESET SWAP FLAG  (re-enable today's in-app swap)") {
-                    prefs.edit().putBoolean(KEY_HAS_SWAPPED_TODAY, false).commit()
+                    prefs.edit { putBoolean(KEY_HAS_SWAPPED_TODAY, false) }
                     feedback = "✓ Swap flag reset. The in-app SWAP MISSION button is available again today."
                 }
             }
@@ -401,7 +417,7 @@ fun AdminPanel(
 
                 // Near Initiate (200 XP threshold)
                 AdminActionButton("SET XP → 175  (rank up to The Initiate on next mission)") {
-                    prefs.edit().putInt(KEY_TOTAL_XP, 175).commit()
+                    prefs.edit { putInt(KEY_TOTAL_XP, 175) }
                     displayXp = 175
                     feedback  = "✓ XP = 175. Complete any mission (+50–150 XP) to hit 200 → rank up to The Initiate."
                 }
@@ -410,7 +426,7 @@ fun AdminPanel(
 
                 // Near Challenger (500 XP threshold)
                 AdminActionButton("SET XP → 475  (rank up to The Challenger on next mission)") {
-                    prefs.edit().putInt(KEY_TOTAL_XP, 475).commit()
+                    prefs.edit { putInt(KEY_TOTAL_XP, 475) }
                     displayXp = 475
                     feedback  = "✓ XP = 475. Complete any mission to hit 500 → rank up to The Challenger."
                 }
@@ -419,7 +435,7 @@ fun AdminPanel(
 
                 // Near Conqueror (900 XP threshold)
                 AdminActionButton("SET XP → 875  (rank up to The Conqueror on next mission)") {
-                    prefs.edit().putInt(KEY_TOTAL_XP, 875).commit()
+                    prefs.edit { putInt(KEY_TOTAL_XP, 875) }
                     displayXp = 875
                     feedback  = "✓ XP = 875. Complete any mission to hit 900 → rank up to The Conqueror."
                 }
@@ -428,7 +444,7 @@ fun AdminPanel(
 
                 // Near Sovereign (1500 XP threshold)
                 AdminActionButton("SET XP → 1475  (rank up to The Sovereign on next mission)") {
-                    prefs.edit().putInt(KEY_TOTAL_XP, 1475).commit()
+                    prefs.edit { putInt(KEY_TOTAL_XP, 1475) }
                     displayXp = 1475
                     feedback  = "✓ XP = 1475. Complete any mission to hit 1500 → rank up to The Sovereign."
                 }
@@ -437,7 +453,7 @@ fun AdminPanel(
 
                 // Reset XP to zero
                 AdminActionButton("SET XP → 0  (reset to The Observer)") {
-                    prefs.edit().putInt(KEY_TOTAL_XP, 0).commit()
+                    prefs.edit { putInt(KEY_TOTAL_XP, 0) }
                     displayXp = 0
                     feedback  = "✓ XP reset to 0. You are back to The Observer."
                 }
@@ -457,7 +473,7 @@ fun AdminPanel(
                     label         = "RESET ALL DATA  (full wipe — cannot be undone)",
                     isDestructive = true
                 ) {
-                    prefs.edit().clear().commit()
+                    prefs.edit { clear() }
                     displayXp     = 0
                     displayStatus = "ACTIVE"
                     displayDate   = "—"
@@ -474,7 +490,7 @@ fun AdminPanel(
                     label         = "CLEAR HISTORY ONLY",
                     isDestructive = true
                 ) {
-                    prefs.edit().putString(KEY_HISTORY_JSON, "[]").commit()
+                    prefs.edit { putString(KEY_HISTORY_JSON, "[]") }
                     feedback = "✓ History cleared. HistoryScreen will now show empty state."
                 }
             }
