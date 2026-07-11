@@ -362,8 +362,7 @@ fun MissionNavGraph(startDestination: String) {
     // It starts at 1 (Observer BGM) and reflects the user's actual rank as soon
     // as uiState loads. It never resets on tab switches because it lives here,
     // not inside DashboardScreen.
-    @Suppress("UNUSED_VALUE")
-    var rankForBgm by remember { mutableStateOf(1) }
+    val rankForBgm = remember { mutableStateOf(1) }
 
     // ── AMBIENT BGM PLAYER ─────────────────────────────────────────────────────
     // Called UNCONDITIONALLY — always in the composition tree regardless of tab.
@@ -378,7 +377,7 @@ fun MissionNavGraph(startDestination: String) {
     // means audio resumes instantly on return with no prepareAsync() gap.
     DashboardAudioEffect(
         context   = LocalContext.current,
-        rankLevel = rankForBgm,
+        rankLevel = rankForBgm.value,
         active    = showBottomNav
     )
 
@@ -506,7 +505,7 @@ fun MissionNavGraph(startDestination: String) {
                 val dashUiState by dashVm.uiState.observeAsState(DashboardUiState())
                 LaunchedEffect(dashUiState.xpProgress?.currentRank?.level) {
                     val newLevel = dashUiState.xpProgress?.currentRank?.level
-                    if (newLevel != null) rankForBgm = newLevel
+                    if (newLevel != null) rankForBgm.value = newLevel
                 }
 
                 DashboardScreen(
