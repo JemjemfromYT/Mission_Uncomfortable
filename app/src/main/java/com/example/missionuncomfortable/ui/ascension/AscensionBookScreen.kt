@@ -101,6 +101,15 @@
  *      setVolume(0f,0f) instead of pause() — safe to call in any MediaPlayer
  *      state including PREPARING. The player is fully released when the
  *      composable leaves the tree via DisposableEffect.
+ * v13 — Illustration overhaul (L2 + L4) to match AscensionLore v3 story changes.
+ *      L2 Initiate (Roosevelt/Arena theme):
+ *        p1: metal leg brace → two crossed swords with cross-guards and centre glint
+ *        p2: lone footprint → cowboy hat with brim and band (Roosevelt in the Badlands)
+ *        p3: three gold stars unchanged (now represents Roosevelt's three great arenas)
+ *      L4 Conqueror (Alexander the Great theme):
+ *        p1: barbed wire → diagonal charging spear with spearhead + speed lines
+ *        p2: candle flame → 16-point Macedonian radiant star (Alexander's emblem)
+ *        p3: open book → geometric 5-point crown with jewel dots
  */
 
 package com.example.missionuncomfortable.ui.ascension
@@ -1131,11 +1140,14 @@ private fun OrnamentalDivider(color: Color) {
  * Shapes are simple and geometric — they should read clearly at ~110×60dp.
  *
  * Rank → drawings:
- *   L1 Observer   p1: oval running track + figure    p2: stopwatch face    p3: finish-line tape
- *   L2 Initiate   p1: metal leg brace outline        p2: lone footprint    p3: three gold stars
- *   L3 Challenger p1: ship hull trapped in ice       p2: small boat+waves  p3: compass rose
- *   L4 Conqueror  p1: barbed wire                    p2: candle flame      p3: open book
- *   L5 Sovereign  p1: two Roman columns              p2: scroll with lines p3: laurel wreath
+ *   L1 Observer   p1: oval running track + figure    p2: stopwatch face         p3: finish-line tape
+ *   L2 Initiate   p1: crossed swords (the arena)     p2: cowboy hat (Badlands)  p3: three achievement stars
+ *   L3 Challenger p1: ship hull trapped in ice       p2: small boat+waves       p3: compass rose
+ *   L4 Conqueror  p1: charging spear + speed lines   p2: Macedonian radiant star p3: conqueror's crown
+ *   L5 Sovereign  p1: two Roman columns              p2: scroll with lines      p3: laurel wreath
+ *
+ * v13: L2 illustrations updated — Roosevelt/Arena theme replaces Wilma Rudolph/leg-brace theme.
+ *      L4 illustrations updated — Alexander the Great replaces Viktor Frankl (barbed wire/candle).
  *
  * @param rankLevel  1–5, selects which set of illustrations to draw.
  * @param pageIndex  1, 2, or 3 (body pages only — not title/closing).
@@ -1258,56 +1270,60 @@ private fun PageIllustration(
                 }
             }
 
-            // ── L2: INITIATE (Wilma Rudolph) ──────────────────────────────────
+            // ── L2: INITIATE (Theodore Roosevelt — The Man in the Arena) ────────
+            // v13: Replaced Wilma Rudolph illustrations (leg brace, footprint) with
+            //      Roosevelt/Arena theme (crossed swords, cowboy hat, achievement stars).
             2 -> when (pageIndex) {
 
-                // p1 — Metal leg brace (geometric outline: two uprights + three crossbars)
+                // p1 — Two crossed swords (the arena — daring to enter the fight)
                 1 -> {
-                    val lx = cx - 20f; val rx = cx + 20f
-                    val top = 6f; val bot = h - 6f
-                    // Two vertical struts
-                    drawLine(ac.copy(alpha = 0.7f), Offset(lx, top), Offset(lx, bot), strokeWidth = 3f, cap = StrokeCap.Round)
-                    drawLine(ac.copy(alpha = 0.7f), Offset(rx, top), Offset(rx, bot), strokeWidth = 3f, cap = StrokeCap.Round)
-                    // Three horizontal crossbars
-                    val bars = listOf(top + 6f, cy, bot - 6f)
-                    bars.forEach { y ->
-                        drawLine(hc.copy(alpha = 0.75f), Offset(lx - 2f, y), Offset(rx + 2f, y), strokeWidth = 2f, cap = StrokeCap.Round)
+                    // Sword 1: upper-left tip → lower-right handle
+                    drawLine(ac.copy(alpha = 0.75f), Offset(w * 0.10f, h * 0.10f), Offset(w * 0.90f, h * 0.90f), strokeWidth = 3.5f, cap = StrokeCap.Round)
+                    // Sword 2: upper-right tip → lower-left handle
+                    drawLine(ac.copy(alpha = 0.75f), Offset(w * 0.90f, h * 0.10f), Offset(w * 0.10f, h * 0.90f), strokeWidth = 3.5f, cap = StrokeCap.Round)
+                    // Cross-guard on sword 1 — perpendicular bar near the lower-right handle
+                    val g1x = w * 0.73f; val g1y = h * 0.73f
+                    drawLine(hc.copy(alpha = 0.82f), Offset(g1x - 11f, g1y + 11f), Offset(g1x + 11f, g1y - 11f), strokeWidth = 2.5f, cap = StrokeCap.Round)
+                    // Cross-guard on sword 2 — perpendicular bar near the lower-left handle
+                    val g2x = w * 0.27f; val g2y = h * 0.73f
+                    drawLine(hc.copy(alpha = 0.82f), Offset(g2x - 11f, g2y - 11f), Offset(g2x + 11f, g2y + 11f), strokeWidth = 2.5f, cap = StrokeCap.Round)
+                    // Glint where the blades cross (centre of the canvas)
+                    drawCircle(hc.copy(alpha = 0.92f), 5f, Offset(cx, cy))
+                    // Four radiant sparks at 45° from the crossing glint
+                    val sparkLen = 13f; val sparkStart = 8f
+                    for (i in 0 until 4) {
+                        val a = (i * 90.0 + 45.0) * (Math.PI / 180.0)
+                        drawLine(hc.copy(alpha = 0.48f),
+                            Offset(cx + sparkStart * cos(a).toFloat(), cy + sparkStart * sin(a).toFloat()),
+                            Offset(cx + sparkLen  * cos(a).toFloat(), cy + sparkLen  * sin(a).toFloat()),
+                            strokeWidth = 1.2f)
                     }
-                    // Hinge circles at top and bottom (where the brace fastens)
-                    drawCircle(ac.copy(alpha = 0.5f), 4f, Offset(lx, top + 6f), style = Stroke(1.5f))
-                    drawCircle(ac.copy(alpha = 0.5f), 4f, Offset(rx, top + 6f), style = Stroke(1.5f))
-                    drawCircle(ac.copy(alpha = 0.5f), 4f, Offset(lx, bot - 6f), style = Stroke(1.5f))
-                    drawCircle(ac.copy(alpha = 0.5f), 4f, Offset(rx, bot - 6f), style = Stroke(1.5f))
                 }
 
-                // p2 — A single footprint (heel oval + five toe circles)
+                // p2 — Cowboy hat (Roosevelt in the Badlands — where he forged himself)
                 2 -> {
-                    // Foot main body (elongated oval tilted slightly)
-                    drawOval(
-                        hc.copy(alpha = 0.50f),
-                        topLeft = Offset(cx - 12f, cy - 22f),
-                        size = Size(24f, 40f)
-                    )
-                    // Heel (slightly wider oval at bottom)
-                    drawOval(
-                        ac.copy(alpha = 0.55f),
-                        topLeft = Offset(cx - 10f, cy + 12f),
-                        size = Size(20f, 12f)
-                    )
-                    // Five toes (small circles above the foot)
-                    val toeX = listOf(cx - 14f, cx - 7f, cx, cx + 7f, cx + 13f)
-                    val toeY = listOf(cy - 26f, cy - 29f, cy - 30f, cy - 28f, cy - 24f)
-                    val toeR = listOf(4.5f, 4f, 4.5f, 4f, 3.5f)
-                    toeX.forEachIndexed { i, tx ->
-                        drawCircle(hc.copy(alpha = 0.55f), toeR[i], Offset(tx, toeY[i]))
+                    // Wide flat brim (ellipse)
+                    drawOval(ac.copy(alpha = 0.60f),  topLeft = Offset(cx - 44f, cy),      size = Size(88f, 18f))
+                    drawOval(ac.copy(alpha = 0.45f),  topLeft = Offset(cx - 44f, cy),      size = Size(88f, 18f), style = Stroke(1.5f))
+                    // Crown — a tall, slightly-tapered body rising from the brim
+                    val crownPath = Path().apply {
+                        moveTo(cx - 24f, cy + 2f)       // bottom-left of crown
+                        lineTo(cx - 20f, cy - 28f)      // upper-left
+                        cubicTo(cx - 20f, cy - 38f, cx + 20f, cy - 38f, cx + 20f, cy - 28f) // rounded top
+                        lineTo(cx + 24f, cy + 2f)       // bottom-right of crown
+                        close()
                     }
+                    drawPath(crownPath, ac.copy(alpha = 0.62f))
+                    drawPath(crownPath, hc.copy(alpha = 0.55f), style = Stroke(1.5f))
+                    // Hat band — thin accent stripe just above the brim
+                    drawLine(hc.copy(alpha = 0.68f), Offset(cx - 24f, cy - 2f), Offset(cx + 24f, cy - 2f), strokeWidth = 2.2f)
                 }
 
-                // p3 — Three medal stars (horizontal row)
+                // p3 — Three achievement stars (Roosevelt's three great arenas:
+                //       San Juan Hill, the Badlands, the White House)
                 else -> {
                     val starCentres = listOf(cx - 32f, cx, cx + 32f)
                     starCentres.forEach { sx ->
-                        // Draw a 5-pointed star using a Path
                         val outerR = 14f; val innerR = 6f
                         val starPath = Path()
                         for (i in 0 until 10) {
@@ -1318,7 +1334,6 @@ private fun PageIllustration(
                             if (i == 0) starPath.moveTo(px, py) else starPath.lineTo(px, py)
                         }
                         starPath.close()
-                        // Fill the star with hot colour, outline with accent
                         drawPath(starPath, hc.copy(alpha = 0.65f))
                         drawPath(starPath, ac.copy(alpha = 0.80f), style = Stroke(width = 1.2f))
                     }
@@ -1423,78 +1438,114 @@ private fun PageIllustration(
                 }
             }
 
-            // ── L4: CONQUEROR (Viktor Frankl) ─────────────────────────────────
+            // ── L4: CONQUEROR (Alexander the Great) ───────────────────────────
+            // v13: Replaced Viktor Frankl illustrations (barbed wire, candle, open book)
+            //      with Alexander/conquest theme (charging spear, Macedonian star, crown).
             4 -> when (pageIndex) {
 
-                // p1 — Barbed wire (horizontal line + small X barb marks)
+                // p1 — Charging spear with speed lines (Alexander always led from the front)
                 1 -> {
-                    // Three horizontal wire strands
-                    val wireY = listOf(cy - 8f, cy, cy + 8f)
-                    wireY.forEach { wy ->
-                        drawLine(ac.copy(alpha = 0.55f), Offset(4f, wy), Offset(w - 4f, wy), strokeWidth = 1.5f)
-                    }
-                    // Barb crosses (X shapes) along the middle wire
-                    val barbX = listOf(w * 0.15f, w * 0.35f, w * 0.55f, w * 0.75f, w * 0.90f)
-                    barbX.forEach { bx ->
-                        val blen = 5f
-                        drawLine(hc.copy(alpha = 0.70f), Offset(bx - blen, cy - blen), Offset(bx + blen, cy + blen), strokeWidth = 1.5f)
-                        drawLine(hc.copy(alpha = 0.70f), Offset(bx - blen, cy + blen), Offset(bx + blen, cy - blen), strokeWidth = 1.5f)
-                    }
-                    // Vertical post at each end
-                    drawLine(ac.copy(alpha = 0.65f), Offset(4f, 4f), Offset(4f, h - 4f), strokeWidth = 2.5f)
-                    drawLine(ac.copy(alpha = 0.65f), Offset(w - 4f, 4f), Offset(w - 4f, h - 4f), strokeWidth = 2.5f)
-                }
-
-                // p2 — Candle with flame
-                2 -> {
-                    // Candle body
-                    drawRect(
-                        ac.copy(alpha = 0.65f),
-                        topLeft = Offset(cx - 10f, cy - 4f),
-                        size = Size(20f, h / 2f)
-                    )
-                    // Wax drip on the side
-                    val drip = Path().apply {
-                        moveTo(cx + 10f, cy + 4f)
-                        cubicTo(cx + 13f, cy + 12f, cx + 10f, cy + 18f, cx + 8f, cy + 20f)
-                        lineTo(cx + 10f, cy + 20f)
-                        lineTo(cx + 10f, cy + 4f)
-                    }
-                    drawPath(drip, ac.copy(alpha = 0.40f))
-                    // Wick
-                    drawLine(hc.copy(alpha = 0.8f), Offset(cx, cy - 4f), Offset(cx + 2f, cy - 12f), strokeWidth = 1.5f)
-                    // Flame (teardrop path)
-                    val flame = Path().apply {
-                        moveTo(cx + 2f, cy - 12f)                             // base of flame (wick tip)
-                        cubicTo(cx - 8f, cy - 20f, cx - 6f, cy - 34f, cx + 2f, cy - 36f) // left curve up
-                        cubicTo(cx + 10f, cy - 34f, cx + 12f, cy - 20f, cx + 2f, cy - 12f) // right curve down
+                    // Shaft: diagonal from lower-left to upper-right
+                    val shaftS = Offset(w * 0.10f, h * 0.85f)
+                    val shaftE = Offset(w * 0.80f, h * 0.15f)
+                    drawLine(ac.copy(alpha = 0.72f), shaftS, shaftE, strokeWidth = 4f, cap = StrokeCap.Round)
+                    // Spearhead triangle at the upper-right end
+                    val tipPath = Path().apply {
+                        moveTo(w * 0.80f, h * 0.15f)     // shaft–head junction
+                        lineTo(w * 0.72f, h * 0.06f)     // left blade edge
+                        lineTo(w * 0.93f, h * 0.10f)     // sharpened point
+                        lineTo(w * 0.84f, h * 0.28f)     // right blade edge
                         close()
                     }
-                    drawPath(flame, hc.copy(alpha = 0.75f))
-                    drawPath(flame, ac.copy(alpha = 0.60f), style = Stroke(1f))
-                    // Warm glow halo under the flame
-                    drawCircle(hc.copy(alpha = 0.12f), 18f, Offset(cx + 2f, cy - 24f))
+                    drawPath(tipPath, hc.copy(alpha = 0.82f))
+                    drawPath(tipPath, ac.copy(alpha = 0.55f), style = Stroke(1.2f))
+                    // Butt-spike (small filled triangle at lower-left end)
+                    val buttPath = Path().apply {
+                        moveTo(w * 0.10f, h * 0.85f)
+                        lineTo(w * 0.04f, h * 0.93f)
+                        lineTo(w * 0.08f, h * 0.96f)
+                        close()
+                    }
+                    drawPath(buttPath, hc.copy(alpha = 0.58f))
+                    // Speed lines — parallel dashes to the left of the shaft (motion blur)
+                    for (i in 0..3) {
+                        val yOff = i * 9f
+                        drawLine(ac.copy(alpha = 0.42f - i * 0.08f),
+                            Offset(w * 0.04f, h * 0.38f + yOff),
+                            Offset(w * 0.40f, h * 0.38f + yOff),
+                            strokeWidth = 1.2f)
+                    }
                 }
 
-                // p3 — Open book (two rectangles with a spine, text lines inside)
+                // p2 — Macedonian radiant star (Alexander's emblem; symbol of Macedon)
+                2 -> {
+                    val r = minOf(w, h) / 2f - 4f
+                    // Faint outer ring
+                    drawCircle(ac.copy(alpha = 0.28f), radius = r, center = Offset(cx, cy), style = Stroke(1f))
+                    // 16 radiating beams — 8 long cardinal/diagonal beams, 8 shorter fills
+                    for (i in 0 until 16) {
+                        val angle = (i * 22.5) * (Math.PI / 180.0)
+                        val isMain = i % 2 == 0
+                        val innerR  = if (isMain) r * 0.22f else r * 0.42f
+                        val outerR2 = if (isMain) r * 0.95f else r * 0.68f
+                        drawLine(
+                            if (isMain) hc.copy(alpha = 0.82f) else ac.copy(alpha = 0.48f),
+                            Offset(cx + innerR  * cos(angle).toFloat(), cy + innerR  * sin(angle).toFloat()),
+                            Offset(cx + outerR2 * cos(angle).toFloat(), cy + outerR2 * sin(angle).toFloat()),
+                            strokeWidth = if (isMain) 2.2f else 1f
+                        )
+                    }
+                    // Centre filled circle
+                    drawCircle(hc.copy(alpha = 0.92f), 4.5f, Offset(cx, cy))
+                }
+
+                // p3 — Conqueror's crown (geometric, five-pointed with jewel dots)
                 else -> {
-                    val bw = w * 0.42f; val bh = h * 0.65f
-                    val leftX = cx - bw - 3f; val rightX = cx + 3f
-                    val bookTop = cy - bh / 2f
-                    // Left page
-                    drawRect(ac.copy(alpha = 0.50f), topLeft = Offset(leftX, bookTop), size = Size(bw, bh))
-                    drawRect(ac.copy(alpha = 0.65f), topLeft = Offset(leftX, bookTop), size = Size(bw, bh), style = Stroke(1.2f))
-                    // Right page
-                    drawRect(ac.copy(alpha = 0.50f), topLeft = Offset(rightX, bookTop), size = Size(bw, bh))
-                    drawRect(ac.copy(alpha = 0.65f), topLeft = Offset(rightX, bookTop), size = Size(bw, bh), style = Stroke(1.2f))
-                    // Spine line
-                    drawLine(hc.copy(alpha = 0.60f), Offset(cx, bookTop - 2f), Offset(cx, bookTop + bh + 2f), strokeWidth = 2f)
-                    // Text lines on each page
-                    for (i in 0 until 4) {
-                        val lineY = bookTop + 10f + i * 9f
-                        val lineW = bw - 14f
-                        drawLine(hc.copy(alpha = 0.30f), Offset(leftX + 7f, lineY), Offset(leftX + 7f + lineW, lineY), strokeWidth = 1f)
-                        drawLine(hc.copy(alpha = 0.30f), Offset(rightX + 7f, lineY), Offset(rightX + 7f + lineW, lineY), strokeWidth = 1f)
+                    val crownBase  = h * 0.72f
+                    val crownLeft  = w * 0.14f
+                    val crownRight = w * 0.86f
+                    val crownW     = crownRight - crownLeft
+                    val bandH      = h * 0.13f
+
+                    // Crown base band
+                    drawRect(ac.copy(alpha = 0.52f),
+                        topLeft = Offset(crownLeft, crownBase - bandH), size = Size(crownW, bandH))
+
+                    // Five crown points (tall, short, tallest-centre, short, tall)
+                    val pointsX = listOf(
+                        crownLeft,
+                        crownLeft + crownW * 0.25f,
+                        crownLeft + crownW * 0.50f,
+                        crownLeft + crownW * 0.75f,
+                        crownRight
+                    )
+                    val pointsY = listOf(
+                        h * 0.18f,                 // left tall
+                        crownBase - bandH - h * 0.14f,  // left short
+                        h * 0.10f,                 // centre tallest
+                        crownBase - bandH - h * 0.14f,  // right short
+                        h * 0.18f                  // right tall
+                    )
+                    val crownPath = Path().apply {
+                        moveTo(crownLeft, crownBase - bandH)
+                        pointsX.forEachIndexed { i, px -> lineTo(px, pointsY[i]) }
+                        lineTo(crownRight, crownBase - bandH)
+                        close()
+                    }
+                    drawPath(crownPath, ac.copy(alpha = 0.52f))
+                    drawPath(crownPath, hc.copy(alpha = 0.72f), style = Stroke(1.5f))
+
+                    // Jewel dot at each crown point tip
+                    pointsX.forEachIndexed { i, px ->
+                        drawCircle(hc.copy(alpha = 0.78f), 3.5f, Offset(px, pointsY[i]))
+                    }
+                    // Decorative vertical lines on the base band
+                    for (i in 1..4) {
+                        val lx = crownLeft + crownW * i / 5f
+                        drawLine(hc.copy(alpha = 0.32f),
+                            Offset(lx, crownBase - bandH + 2f),
+                            Offset(lx, crownBase - 2f),
+                            strokeWidth = 1f)
                     }
                 }
             }
