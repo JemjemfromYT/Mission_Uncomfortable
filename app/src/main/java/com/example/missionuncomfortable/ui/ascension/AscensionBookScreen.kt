@@ -242,17 +242,8 @@ private class AscensionAudioState(
     private val pool: SoundPool,
     private val soundIds: Map<SfxEvent, Int>
 ) {
-    /**
-     * Resume the BGM after a pause. The initial start is handled automatically
-     * by setOnPreparedListener inside rememberAscensionAudio — do NOT call
-     * this for the first play or it may throw IllegalStateException if the
-     * player has not finished prepareAsync() yet.
-     */
-    fun resumeBgm() {
-        bgmPlayer?.let { runCatching { if (!it.isPlaying) it.start() } }
-    }
-
-    /** Pause the BGM. */
+    /** Pause the BGM (called on CLOSING). The initial start is handled
+     *  automatically by setOnPreparedListener — no matching startBgm() needed. */
     fun stopBgm() { runCatching { bgmPlayer?.pause() } }
 
     /** Play a one-shot SFX. Silently skips if the sound file was absent. */
