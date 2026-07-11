@@ -111,6 +111,18 @@
  *          getAlternateMission() updated: now accepts currentDifficulty: Int and
  *          returns Mission? (null if no compatible swap exists within the difficulty
  *          window of [currentDifficulty-2, currentDifficulty]).
+ *
+ *   v4 — RANK-BASED DIFFICULTY FILTERING (bug fix: Observer rank was too hard).
+ *          getMissionForToday(rankLevel: Int = 1) now accepts the user's rank level
+ *          and filters the mission pool to only difficulty ≤ rankLevel:
+ *            Observer   (1) → difficulty 1 only   (prevents beginners seeing difficulty-5 missions)
+ *            Initiate   (2) → difficulty 1–2
+ *            Challenger (3) → difficulty 1–3
+ *            Conqueror  (4) → difficulty 1–4
+ *            Sovereign  (5) → all missions (unchanged behaviour at max rank)
+ *          getAlternateMission(currentDifficulty, rankLevel) updated to match:
+ *          swap candidates are now drawn from the same rank-filtered pool, so a
+ *          swap cannot present a mission above the user's rank difficulty tier.
  */
 
 package com.example.missionuncomfortable.data
@@ -760,26 +772,61 @@ object MissionRepository {
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * getMissionForToday — returns a deterministic mission based on the current day of year.
+     * getMissionForToday — returns a deterministic mission based on the current day of year,
+     * filtered to only missions appropriate for the user's current rank level.
      *
-     * Uses dayOfYear % ALL_MISSIONS.size so the same mission appears on the same
-     * calendar day every year. The result is consistent across app restarts on the
-     * same day — no randomness involved.
+     * v4 UPDATE — RANK-BASED DIFFICULTY FILTERING:
+     *
+     *   Each rank can only see missions up to its own max difficulty tier.
+     *   This prevents Observer-rank beginners from receiving difficulty-5 missions
+     *   that belong to veteran Sovereign players:
+     *
+     *     Observer   (level 1) → difficulty 1 only   (8 missions)
+     *     Initiate   (level 2) → difficulty 1–2      (19 missions)
+     *     Challenger (level 3) → difficulty 1–3      (30 missions)
+     *     Conqueror  (level 4) → difficulty 1–4      (36 missions)
+     *     Sovereign  (level 5) → difficulty 1–5      (all 40 missions)
+     *
+     *   The dayOfYear modulo rotates WITHIN the eligible pool only, so the rotation
+     *   window shrinks for low ranks and grows as the user earns higher ranks.
+     *   This is intentional — beginners get a manageable, encouraging experience
+     *   before the harder missions are unlocked.
      *
      * The returned mission has status = ACTIVE and dateAssigned = "".
      * DashboardViewModel calls .copy(status = ..., dateAssigned = todayString)
      * to set the correct values at runtime.
+     *
+     * @param rankLevel  The user's current rank level (1–5). Defaults to 1 (Observer)
+     *                   so existing call sites without rank data stay safe.
+     * @return           The day's mission for this rank, deterministic for a given date.
      */
-    fun getMissionForToday(): Mission {
+    fun getMissionForToday(rankLevel: Int = 1): Mission {
+        // Clamp rankLevel to a valid range in case an unexpected value is passed.
+        val maxDifficulty = rankLevel.coerceIn(1, 5)
+
+        // Filter to only missions at or below the rank's max difficulty.
+        // ifEmpty fallback: should never trigger with a well-populated ALL_MISSIONS,
+        // but defensively returns the full list rather than crashing.
+        val eligibleMissions = ALL_MISSIONS.filter { it.difficulty <= maxDifficulty }
+            .ifEmpty { ALL_MISSIONS }
+
+        // Rotate deterministically by day of year within the eligible pool.
+        // Same day → same mission for a given rank level, across restarts and reinstalls.
         val dayOfYear = Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
-        val index = dayOfYear % ALL_MISSIONS.size
-        return ALL_MISSIONS[index]
+        val index = dayOfYear % eligibleMissions.size
+        return eligibleMissions[index]
     }
 
     /**
-     * getAlternateMission — returns the first difficulty-compatible swap candidate.
+     * getAlternateMission — returns the first difficulty-compatible swap candidate
+     * within the user's eligible mission pool for their rank level.
      *
-     * v3 UPDATE: This function now accepts currentDifficulty and enforces the swap rule:
+     * v3 UPDATE: accepts currentDifficulty and enforces the swap window rule.
+     *
+     * v4 UPDATE — RANK-BASED DIFFICULTY FILTERING:
+     *   Now also accepts rankLevel so the swap candidate is drawn from the same
+     *   eligible pool as getMissionForToday(rankLevel). A swap cannot present a
+     *   mission that the user's rank level would not normally see.
      *
      *   A swap is allowed only when the candidate mission's difficulty satisfies:
      *     candidate.difficulty >= currentDifficulty - 2  AND
@@ -790,28 +837,38 @@ object MissionRepository {
      *   more than 2 difficulty levels — this prevents the app from being used to
      *   consistently dodge hard missions.
      *
-     * The search starts at (todayIndex + 1) and wraps through the full list.
+     * The search starts one position after today's mission in the eligible list and wraps.
      * Today's mission is always skipped (offset starts at 1).
      *
-     * Returns null if no mission in the entire list satisfies the difficulty window.
-     * With 40 missions this should rarely happen, but callers must handle null.
-     *
-     * NOTE (v2 reference): In v5 of DashboardScreen, the SWAP MISSION button showed a
-     * motivational popup instead of calling this function. In v3 of this file (DashboardScreen v6),
-     * swapping is now real and gated by the difficulty check described above.
+     * Returns null if no mission in the eligible pool satisfies the difficulty window.
+     * Callers must handle null.
      *
      * @param currentDifficulty  The difficulty of today's currently active mission (1–5).
+     * @param rankLevel          The user's current rank level (1–5). Filters the pool.
      * @return                   The first compatible swap candidate, or null if none exists.
      */
-    fun getAlternateMission(currentDifficulty: Int): Mission? {
-        val dayOfYear = Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
-        val todayIndex = dayOfYear % ALL_MISSIONS.size
+    fun getAlternateMission(currentDifficulty: Int, rankLevel: Int = 1): Mission? {
+        // Clamp rankLevel to a valid range.
+        val maxDifficulty = rankLevel.coerceIn(1, 5)
 
-        // Scan forward through the list, starting one position after today's mission.
+        // Build the same eligible pool as getMissionForToday() for this rank.
+        // Swap candidates must come from the same pool, not from higher-difficulty missions
+        // that the user's rank doesn't yet permit.
+        val eligibleMissions = ALL_MISSIONS.filter { it.difficulty <= maxDifficulty }
+            .ifEmpty { ALL_MISSIONS }
+
+        // Find today's mission's position within the ELIGIBLE pool (not ALL_MISSIONS),
+        // so the forward scan starts from the right index.
+        val todayMission = getMissionForToday(rankLevel)
+        val todayIndex = eligibleMissions.indexOfFirst { it.id == todayMission.id }
+            .takeIf { it >= 0 }
+            ?: (Calendar.getInstance().get(Calendar.DAY_OF_YEAR) % eligibleMissions.size)
+
+        // Scan forward through the eligible list, starting one position after today's mission.
         // offset starts at 1 so we always skip today's own mission.
-        for (offset in 1..ALL_MISSIONS.size) {
-            val candidateIndex = (todayIndex + offset) % ALL_MISSIONS.size
-            val candidate = ALL_MISSIONS[candidateIndex]
+        for (offset in 1..eligibleMissions.size) {
+            val candidateIndex = (todayIndex + offset) % eligibleMissions.size
+            val candidate = eligibleMissions[candidateIndex]
 
             // Swap rule: candidate difficulty must be equal to current, or up to 2 levels easier.
             // candidateD >= currentD - 2  →  not more than 2 levels easier
@@ -824,8 +881,8 @@ object MissionRepository {
             }
         }
 
-        // No compatible mission found in the entire list.
-        // This should not happen with a properly populated ALL_MISSIONS, but return null defensively.
+        // No compatible mission found in the eligible pool.
+        // This can happen at low ranks with few missions. Callers must handle null.
         return null
     }
 }

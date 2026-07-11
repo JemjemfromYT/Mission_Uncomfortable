@@ -165,6 +165,14 @@
  *          3. New imports: FastOutSlowInEasing, RepeatMode, animateFloat,
  *             infiniteRepeatable, rememberInfiniteTransition, drawBehind, Brush.
  *
+ *   v13 — RANK DIFFICULTY FIX + SWAP UNBLOCK:
+ *          Removed the hardcoded "difficulty >= 3 cannot swap" blocked-reason case from
+ *          MissionCard's SwapBlockedDialog logic. With rank-based mission filtering now
+ *          in MissionRepository (v4), a user only sees missions appropriate for their rank,
+ *          so the difficulty number alone is no longer a valid reason to block swaps.
+ *          Swap availability is now gated purely by hasSwappedToday and by whether
+ *          getAlternateMission() finds a compatible mission in the rank's pool.
+ *
  *   v12 — GLOW FIX (RING GRADIENT) + BIGGER BADGE:
  *          Problem: the v11 gradient went gold-at-centre → transparent-at-edge, but the
  *          badge Image is drawn ON TOP of the glow and covers the centre — so only the
@@ -898,15 +906,14 @@ private fun MissionCard(
     // Placed above the card Box alongside SwapConfirmDialog.
     if (showSwapBlockedDialog.value) {
         // Determine the reason shown in SwapBlockedDialog.
-        // v8: Three cases:
-        //   1. Hard mission (difficulty >= 3): cannot ever swap — motivational message.
-        //   2. Already swapped today: used the daily swap — try again tomorrow.
-        //   3. No alternate found: edge case, no compatible mission in the list.
+        // v8 (updated): Two cases — the old "difficulty >= 3 cannot swap" hard block has been
+        // removed. With rank-based mission filtering (v5 of MissionRepository), a user only
+        // sees missions appropriate for their rank level, so the difficulty window for swaps
+        // is already scoped to that rank. There is no longer a reason to permanently block
+        // swaps by raw difficulty number — rank progression is the gate, not a hardcoded number.
+        //   1. Already swapped today: used the daily swap — try again tomorrow.
+        //   2. No alternate found: no compatible mission exists in the current rank pool.
         val blockedReason = when {
-            mission.difficulty >= 3 ->
-                "Skipping forbidden.\n\n" +
-                        "Missions at difficulty 3 and above cannot be swapped out. " +
-                        "Face it."
             hasSwappedToday ->
                 "You have already used your swap for today. Come back tomorrow with a fresh mission."
             else ->

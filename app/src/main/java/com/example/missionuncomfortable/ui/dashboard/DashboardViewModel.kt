@@ -149,7 +149,7 @@
  *                3. Saves the new mission ID and sets has_swapped_today = true.
  *                4. Clears alternateMission (one swap per day).
  *
- *   v5 — Warning cleanup (Android Studio build output):
+ *   v5 — Warning cleanup (Android Studio build output) + rank-based mission filtering:
  *            - Removed unused import: CompletedMissionEntry. saveHistoryEntry() builds
  *              JSON manually and never instantiates the class directly.
  *            - All SharedPreferences.Editor.commit() calls replaced with apply().
@@ -326,6 +326,17 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     private fun loadInitialData() {
         val todayString = today()
 
+        // ── LOAD XP EARLY — needed for rank-level filtering of missions ────────
+        // v5 UPDATE: totalXp is now loaded BEFORE the isSameDay block so we can
+        // pass the user's current rank level to getMissionForToday(). This fixes
+        // Observer-rank beginners receiving difficulty-5 missions from the full pool.
+        // The rank level gates the mission difficulty: Observer → max difficulty 1,
+        // Initiate → max difficulty 2, Challenger → 3, Conqueror → 4, Sovereign → all.
+        val totalXp    = prefs.getInt(KEY_TOTAL_XP, 0)
+        val xpProgress = calculateXpProgress(totalXp)
+        // Derive the numeric rank level (1–5) for mission-pool filtering.
+        val currentRankLevel = xpProgress.currentRank.level
+
         // ── v4: DAY DETECTION via date string ──────────────────────────────────
         // savedDate is the date string written when the current mission was assigned.
         // If savedDate == todayString, we are on the same calendar day.
@@ -344,14 +355,17 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
             // Look up the mission by its saved ID. This might be the original day's mission
             // OR a swapped mission — either way, find it by ID from the full library.
+            // v5: fallback now passes currentRankLevel so the fallback also respects rank.
             val foundMission = MissionRepository.ALL_MISSIONS.find { it.id == savedMissionId }
-                ?: MissionRepository.getMissionForToday()  // Fallback to today's if ID not found
+                ?: MissionRepository.getMissionForToday(currentRankLevel)  // Rank-aware fallback
             activeMission = foundMission
 
         } else {
             // ── NEW DAY: reset all per-day state ───────────────────────────────
             hasSwappedToday = false
-            activeMission   = MissionRepository.getMissionForToday()
+            // v5: pass currentRankLevel so the daily mission is drawn from the pool
+            // appropriate for this user's rank, not from all 40 missions indiscriminately.
+            activeMission   = MissionRepository.getMissionForToday(currentRankLevel)
 
             // Persist the new day's baseline.
             prefs.edit {
@@ -382,10 +396,6 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             dateAssigned = todayString
         )
 
-        // ── Load XP ───────────────────────────────────────────────────────────
-        val totalXp    = prefs.getInt(KEY_TOTAL_XP, 0)
-        val xpProgress = calculateXpProgress(totalXp)
-
         // ── Load streak ───────────────────────────────────────────────────────
         val streakCount = prefs.getInt(KEY_STREAK_COUNT, 0)
 
@@ -396,10 +406,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         // Only compute if:
         //   (a) the user has NOT already swapped today, AND
         //   (b) the mission is still ACTIVE (can't swap after accepting or completing)
+        // v5: also passes currentRankLevel so the swap candidate respects rank difficulty.
         // getAlternateMission() returns null if no mission within the difficulty
-        // window [currentDifficulty-2, currentDifficulty] is found.
+        // window [currentDifficulty-2, currentDifficulty] is found within the rank pool.
         val alternateMission: Mission? = if (!hasSwappedToday && missionStatus == MissionStatus.ACTIVE) {
-            MissionRepository.getAlternateMission(activeMission.difficulty)?.copy(
+            MissionRepository.getAlternateMission(activeMission.difficulty, currentRankLevel)?.copy(
                 status       = MissionStatus.ACTIVE,
                 dateAssigned = todayString
             )
@@ -498,9 +509,11 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
         // v4: Recompute the alternate in case we need to re-offer the swap button.
         // This handles the case where the user accepted → abandoned → wants to swap.
+        // v5: pass the user's current rank level so the swap candidate respects rank difficulty.
         val todayString = today()
+        val rankLevel   = current.xpProgress?.currentRank?.level ?: 1
         val restoredAlternate: Mission? = if (!current.hasSwappedToday) {
-            MissionRepository.getAlternateMission(mission.difficulty)?.copy(
+            MissionRepository.getAlternateMission(mission.difficulty, rankLevel)?.copy(
                 status       = MissionStatus.ACTIVE,
                 dateAssigned = todayString
             )

@@ -70,6 +70,14 @@
  *          Controls: skip day, force ACTIVE status, set XP for each rank threshold,
  *          full data reset, history-only clear.
  *          Activation: 7 rapid taps on the rank badge (handled in DashboardScreen).
+ *
+ *   v2 — MISSION CONTROLS section added.
+ *          New actions in a dedicated "MISSION CONTROLS" card:
+ *            • SWAP MISSION (force random swap — bypasses difficulty gate and daily limit)
+ *            • SWAP TO DIFFICULTY 1 / 3 / 5 (quick access to specific difficulty tiers)
+ *            • RESET SWAP FLAG (re-enables the in-app SWAP MISSION button for today)
+ *          Added KEY_HAS_SWAPPED_TODAY and KEY_MISSION_DATE constants (synced from ViewModel).
+ *          Added import of MissionRepository (data object — not a ViewModel, safe to import).
  */
 
 package com.example.missionuncomfortable.ui.admin
@@ -91,6 +99,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+// MissionRepository import — used by the "SWAP MISSION" admin action so the admin
+// can force-swap to any mission in the full library, bypassing the normal difficulty gate.
+// MissionRepository is a data object, not a ViewModel class, so this import is safe
+// and does not violate the AdminPanel-has-no-ViewModel-dependency rule.
+import com.example.missionuncomfortable.data.MissionRepository
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SHAREDPREFERENCES KEY CONSTANTS
@@ -125,6 +138,12 @@ private const val KEY_LAST_STREAK_DATE = "last_streak_date"
 
 /** String — JSON array of CompletedMissionEntry objects. */
 private const val KEY_HISTORY_JSON     = "mission_history_json"
+
+/** Boolean — true when the user has already used their one daily swap. */
+private const val KEY_HAS_SWAPPED_TODAY = "has_swapped_today"
+
+/** String "yyyy-MM-dd" — the date KEY_MISSION_ID was assigned. Not modified on swap. */
+private const val KEY_MISSION_DATE     = "mission_date_today"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // COLOUR CONSTANTS
@@ -264,6 +283,109 @@ fun AdminPanel(
                     prefs.edit().putString(KEY_MISSION_STATUS, "ACTIVE").commit()
                     displayStatus = "ACTIVE"
                     feedback = "✓ Status reset to ACTIVE. Close panel to see the ACCEPT button."
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            // ── SECTION: MISSION CONTROLS ─────────────────────────────────────
+            // Admin-only mission swap. Bypasses the normal difficulty gate and the
+            // one-swap-per-day limit. Useful for testing the mission card UI with
+            // a specific mission or after using today's regular swap already.
+            AdminSectionTitle("MISSION CONTROLS")
+            AdminCard {
+
+                // SWAP TO RANDOM MISSION
+                // Picks a random mission from the full 40-mission library that is
+                // different from the currently active one, then writes its ID to
+                // SharedPreferences. Sets has_swapped_today = true to prevent the
+                // user from also using the normal in-app swap after the admin swap.
+                // Effect: close the panel → ViewModel.onRefresh() → new mission shown.
+                AdminActionButton("SWAP MISSION  (force random swap — bypasses difficulty gate)") {
+                    val currentId  = prefs.getString(KEY_MISSION_ID, "") ?: ""
+                    // Build the candidate list — every mission EXCEPT the current one.
+                    // The admin bypass intentionally includes all difficulty tiers so
+                    // you can test any mission at any rank without restrictions.
+                    val candidates = MissionRepository.ALL_MISSIONS.filter { it.id != currentId }
+
+                    if (candidates.isNotEmpty()) {
+                        // Pick a random candidate from the full eligible list.
+                        val newMission = candidates.random()
+                        val editor = prefs.edit()
+                        editor.putString(KEY_MISSION_ID, newMission.id)      // Replace active mission
+                        editor.putString(KEY_MISSION_STATUS, "ACTIVE")       // Reset status so ACCEPT is shown
+                        editor.putBoolean(KEY_HAS_SWAPPED_TODAY, true)       // Consume daily swap slot
+                        editor.commit()
+                        displayStatus = "ACTIVE"
+                        feedback = "✓ Mission swapped to '${newMission.title}' (${newMission.id}). Close panel to see the new mission."
+                    } else {
+                        // Should never happen — the library always has more than one mission.
+                        feedback = "⚠ No alternate mission available. Mission library may be empty."
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                // PICK SPECIFIC DIFFICULTY — swap to the first mission of a chosen difficulty.
+                // Useful for quickly testing the difficulty-1 Observer experience or verifying
+                // that difficulty-5 missions look correct in the card UI.
+                AdminActionButton("SWAP TO DIFFICULTY 1  (first available mission)") {
+                    val newMission = MissionRepository.ALL_MISSIONS.firstOrNull { it.difficulty == 1 }
+                    if (newMission != null) {
+                        prefs.edit()
+                            .putString(KEY_MISSION_ID, newMission.id)
+                            .putString(KEY_MISSION_STATUS, "ACTIVE")
+                            .putBoolean(KEY_HAS_SWAPPED_TODAY, true)
+                            .commit()
+                        displayStatus = "ACTIVE"
+                        feedback = "✓ Swapped to difficulty-1 mission '${newMission.title}'. Close panel."
+                    } else {
+                        feedback = "⚠ No difficulty-1 mission found in the library."
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                AdminActionButton("SWAP TO DIFFICULTY 3  (first available mission)") {
+                    val newMission = MissionRepository.ALL_MISSIONS.firstOrNull { it.difficulty == 3 }
+                    if (newMission != null) {
+                        prefs.edit()
+                            .putString(KEY_MISSION_ID, newMission.id)
+                            .putString(KEY_MISSION_STATUS, "ACTIVE")
+                            .putBoolean(KEY_HAS_SWAPPED_TODAY, true)
+                            .commit()
+                        displayStatus = "ACTIVE"
+                        feedback = "✓ Swapped to difficulty-3 mission '${newMission.title}'. Close panel."
+                    } else {
+                        feedback = "⚠ No difficulty-3 mission found in the library."
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                AdminActionButton("SWAP TO DIFFICULTY 5  (first available mission)") {
+                    val newMission = MissionRepository.ALL_MISSIONS.firstOrNull { it.difficulty == 5 }
+                    if (newMission != null) {
+                        prefs.edit()
+                            .putString(KEY_MISSION_ID, newMission.id)
+                            .putString(KEY_MISSION_STATUS, "ACTIVE")
+                            .putBoolean(KEY_HAS_SWAPPED_TODAY, true)
+                            .commit()
+                        displayStatus = "ACTIVE"
+                        feedback = "✓ Swapped to difficulty-5 mission '${newMission.title}'. Close panel."
+                    } else {
+                        feedback = "⚠ No difficulty-5 mission found in the library."
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                // RESET SWAP FLAG — clears the has_swapped_today flag so the user can
+                // use the normal in-app swap button again today. Useful for testing the
+                // swap confirmation dialog flow without needing to skip to the next day.
+                AdminActionButton("RESET SWAP FLAG  (re-enable today's in-app swap)") {
+                    prefs.edit().putBoolean(KEY_HAS_SWAPPED_TODAY, false).commit()
+                    feedback = "✓ Swap flag reset. The in-app SWAP MISSION button is available again today."
                 }
             }
 
