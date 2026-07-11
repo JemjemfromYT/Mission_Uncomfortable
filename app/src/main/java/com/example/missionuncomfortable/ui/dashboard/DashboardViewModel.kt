@@ -148,6 +148,15 @@
  *                2. Replaces todaysMission with it.
  *                3. Saves the new mission ID and sets has_swapped_today = true.
  *                4. Clears alternateMission (one swap per day).
+ *
+ *   v5 — Warning cleanup (Android Studio build output):
+ *            - Removed unused import: CompletedMissionEntry. saveHistoryEntry() builds
+ *              JSON manually and never instantiates the class directly.
+ *            - All SharedPreferences.Editor.commit() calls replaced with apply().
+ *              apply() is safe here — writes are guaranteed to flush before onStop().
+ *              The old commit() calls existed to avoid a Kotlin apply{} ambiguity, but
+ *              since every write already uses an explicit val editor variable, there is
+ *              no longer any ambiguity. apply() is the correct idiomatic choice.
  */
 
 package com.example.missionuncomfortable.ui.dashboard
@@ -158,7 +167,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.example.missionuncomfortable.data.MissionRepository
-import com.example.missionuncomfortable.ui.history.CompletedMissionEntry
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -340,15 +348,15 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             hasSwappedToday = false
             activeMission   = MissionRepository.getMissionForToday()
 
-            // Persist the new day's baseline. Use commit() not apply() — Kotlin's
-            // generic apply { } extension conflicts with SharedPreferences.Editor.apply()
-            // when chained, causing a "Cannot infer type for T" compile error.
+            // Persist the new day's baseline using apply() (async write).
+            // We use an explicit val editor variable so there is no ambiguity between
+            // Kotlin's generic apply { } extension and SharedPreferences.Editor.apply().
             val editor = prefs.edit()
             editor.putString(KEY_MISSION_STATUS, "ACTIVE")
             editor.putString(KEY_MISSION_ID, activeMission.id)
             editor.putString(KEY_MISSION_DATE, todayString)
             editor.putBoolean(KEY_HAS_SWAPPED_TODAY, false)
-            editor.commit()
+            editor.apply()
         }
 
         // ── Restore mission status from SharedPreferences ─────────────────────
@@ -445,7 +453,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         val editor = prefs.edit()
         editor.putString(KEY_MISSION_STATUS, "IN_PROGRESS")
         editor.putString(KEY_MISSION_ID, mission.id)
-        editor.commit()
+        editor.apply()
 
         _uiState.value = current.copy(
             todaysMission    = mission.copy(status = MissionStatus.IN_PROGRESS),
@@ -486,7 +494,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
 
         val editor = prefs.edit()
         editor.putString(KEY_MISSION_STATUS, "ACTIVE")
-        editor.commit()
+        editor.apply()
 
         // v4: Recompute the alternate in case we need to re-offer the swap button.
         // This handles the case where the user accepted → abandoned → wants to swap.
@@ -544,7 +552,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         // ── Step 1: Award XP ──────────────────────────────────────────────────
         val oldTotalXp  = prefs.getInt(KEY_TOTAL_XP, 0)
         val newTotalXp  = oldTotalXp + mission.xpReward
-        prefs.edit().putInt(KEY_TOTAL_XP, newTotalXp).commit()
+        prefs.edit().putInt(KEY_TOTAL_XP, newTotalXp).apply()
 
         // Compute old rank and new rank
         val oldXpProgress = calculateXpProgress(oldTotalXp)
@@ -555,7 +563,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         val bestStreak    = prefs.getInt(KEY_BEST_STREAK, 0)
         val isPersonalBest = newStreakCount > bestStreak
         if (isPersonalBest) {
-            prefs.edit().putInt(KEY_BEST_STREAK, newStreakCount).commit()
+            prefs.edit().putInt(KEY_BEST_STREAK, newStreakCount).apply()
         }
 
         // ── Step 3: Save history entry ────────────────────────────────────────
@@ -569,7 +577,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         val completionEditor = prefs.edit()
         completionEditor.putString(KEY_MISSION_STATUS, "COMPLETED")
         completionEditor.putString(KEY_LAST_COMPLETED_DATE, today())
-        completionEditor.commit()
+        completionEditor.apply()
 
         val completedMission = mission.copy(
             status           = MissionStatus.COMPLETED,
@@ -682,7 +690,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         editor.putString(KEY_MISSION_ID, alternate.id)
         editor.putString(KEY_MISSION_STATUS, "ACTIVE")   // Swapped mission starts ACTIVE
         editor.putBoolean(KEY_HAS_SWAPPED_TODAY, true)
-        editor.commit()
+        editor.apply()
 
         _uiState.value = current.copy(
             todaysMission    = alternate,
@@ -744,7 +752,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
         val streakEditor = prefs.edit()
         streakEditor.putInt(KEY_STREAK_COUNT, newStreak)
         streakEditor.putString(KEY_LAST_STREAK_DATE, todayString)
-        streakEditor.commit()
+        streakEditor.apply()
 
         return newStreak
     }
@@ -788,7 +796,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             "[" + newEntry + "," + existing.substring(1)
         }
 
-        prefs.edit().putString(KEY_HISTORY_JSON, updatedJson).commit()
+        prefs.edit().putString(KEY_HISTORY_JSON, updatedJson).apply()
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -835,7 +843,7 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             levels.add(levelString)
         }
 
-        prefs.edit().putString(KEY_ASCENSION_SEEN, levels.joinToString(",")).commit()
+        prefs.edit().putString(KEY_ASCENSION_SEEN, levels.joinToString(",")).apply()
     }
 
     // ─────────────────────────────────────────────────────────────────────────
