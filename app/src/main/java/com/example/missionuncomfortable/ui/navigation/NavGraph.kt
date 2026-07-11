@@ -362,6 +362,7 @@ fun MissionNavGraph(startDestination: String) {
     // It starts at 1 (Observer BGM) and reflects the user's actual rank as soon
     // as uiState loads. It never resets on tab switches because it lives here,
     // not inside DashboardScreen.
+    @Suppress("UNUSED_VALUE")
     var rankForBgm by remember { mutableStateOf(1) }
 
     // ── AMBIENT BGM PLAYER ─────────────────────────────────────────────────────

@@ -57,7 +57,7 @@
  * v1 — Initial implementation. prepareAsync() + setOnPreparedListener so the
  *      MediaPlayer never blocks the main/composition thread. Auto-releases via
  *      DisposableEffect. Switches track instantly when rankLevel changes.
- * v2 — Added [active] parameter. The player now lives at NavGraph level so it
+ * v2 — Added `active` parameter. The player now lives at NavGraph level so it
  *      survives History / Stats tab switches. When active=false (welcome, rankup,
  *      ascension screens) the volume is clamped to 0f so the BGM is silenced
  *      without destroying and recreating the MediaPlayer. setVolume() is safe to
@@ -106,15 +106,15 @@ private fun bgmResIdForRank(rankLevel: Int): Int = when (rankLevel) {
  *
  * ── Behaviour ────────────────────────────────────────────────────────────────
  * • Starts automatically — no manual call needed.
- * • Loops indefinitely at 45% volume when [active] is true.
- * • Instantly silenced (volume 0) when [active] is false — the player is NOT
- *   released, so it can resume immediately when [active] returns to true.
+ * • Loops indefinitely at 45% volume when `active` is true.
+ * • Instantly silenced (volume 0) when `active` is false — the player is NOT
+ *   released, so it can resume immediately when `active` returns to true.
  * • Switches track instantly when [rankLevel] changes (e.g. after a rank-up).
  * • Releases resources when the composable leaves the tree via DisposableEffect.
  *
  * ── Why active instead of removing the call ──────────────────────────────────
  * This composable lives in MissionNavGraph (above the tab routes). It is NEVER
- * removed from the composition tree during tab switches. The [active] flag lets
+ * removed from the composition tree during tab switches. The `active` flag lets
  * us silence the player on screens that should be quiet (welcome, rankup,
  * ascension) without destroying and recreating the MediaPlayer — which would
  * cause a brief startup gap on return.
