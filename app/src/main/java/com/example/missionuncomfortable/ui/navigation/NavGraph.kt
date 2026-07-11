@@ -121,10 +121,10 @@
  *
  *   v3 — Added ascension route for AscensionBookScreen.
  *
- *   v7 — Hoisted rememberDashboardAudio() from DashboardScreen to MissionNavGraph.
+ *   v7 — Hoisted DashboardAudioEffect() from DashboardScreen to MissionNavGraph.
  *        Root cause of BGM dropping on History/Stats tab: DashboardScreen leaves the
  *        composition tree on tab switch, firing DisposableEffect.onDispose() and
- *        releasing the MediaPlayer. Fix: call rememberDashboardAudio() at NavGraph
+ *        releasing the MediaPlayer. Fix: call DashboardAudioEffect() at NavGraph
  *        level where it is never removed during tab navigation. An `active` flag
  *        (= showBottomNav) silences the player on welcome/rankup/ascension without
  *        destroying it. rankForBgm (mutableStateOf) is updated by a LaunchedEffect
@@ -243,7 +243,7 @@ import com.example.missionuncomfortable.ui.ascension.AscensionBookScreen // Full
 import com.example.missionuncomfortable.ui.dashboard.DashboardScreen   // Mission dashboard screen
 import com.example.missionuncomfortable.ui.dashboard.DashboardUiState  // Default state for observeAsState
 import com.example.missionuncomfortable.ui.dashboard.DashboardViewModel // ViewModel for dashboard + rank-up
-import com.example.missionuncomfortable.ui.dashboard.rememberDashboardAudio // Ambient BGM composable
+import com.example.missionuncomfortable.ui.dashboard.DashboardAudioEffect // Ambient BGM composable
 import com.example.missionuncomfortable.ui.history.HistoryScreen        // Mission history screen
 import com.example.missionuncomfortable.ui.rankup.RankUpScreen          // Full-screen rank-up celebration
 import com.example.missionuncomfortable.ui.stats.StatsScreen            // Stats bar-chart screen
@@ -375,7 +375,7 @@ fun MissionNavGraph(startDestination: String) {
     //   • On welcome / rankup / ascension → volume 0f  → silenced
     // The player is NOT released when active becomes false — just muted. This
     // means audio resumes instantly on return with no prepareAsync() gap.
-    rememberDashboardAudio(
+    DashboardAudioEffect(
         context   = LocalContext.current,
         rankLevel = rankForBgm,
         active    = showBottomNav
@@ -489,7 +489,7 @@ fun MissionNavGraph(startDestination: String) {
                 }
             ) {
                 // ── RANK SYNC FOR BGM ──────────────────────────────────────────
-                // The ambient BGM lives at NavGraph level (see rememberDashboardAudio
+                // The ambient BGM lives at NavGraph level (see DashboardAudioEffect
                 // above) and needs to know the user's current rank. We read the
                 // DashboardViewModel here — inside the composable block where its
                 // ViewModelStoreOwner scope is the "dashboard" back stack entry —
@@ -504,7 +504,8 @@ fun MissionNavGraph(startDestination: String) {
                 val dashVm: DashboardViewModel = viewModel()
                 val dashUiState by dashVm.uiState.observeAsState(DashboardUiState())
                 LaunchedEffect(dashUiState.xpProgress?.currentRank?.level) {
-                    dashUiState.xpProgress?.currentRank?.level?.let { rankForBgm = it }
+                    val newLevel = dashUiState.xpProgress?.currentRank?.level
+                    if (newLevel != null) rankForBgm = newLevel
                 }
 
                 DashboardScreen(

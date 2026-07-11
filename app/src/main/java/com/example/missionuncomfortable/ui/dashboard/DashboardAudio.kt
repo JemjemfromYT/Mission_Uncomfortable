@@ -40,7 +40,7 @@
  * at the NavGraph level means the player lives for the entire tab session, so
  * switching to History or Stats does not destroy and recreate the MediaPlayer.
  *
- *   rememberDashboardAudio(
+ *   DashboardAudioEffect(
  *       context   = LocalContext.current,
  *       rankLevel = rankForBgm,          // state var kept at NavGraph level
  *       active    = showBottomNav        // false on welcome/rankup/ascension
@@ -71,6 +71,7 @@ import android.media.AudioAttributes
 import android.media.MediaPlayer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import com.example.missionuncomfortable.R
 
@@ -100,7 +101,7 @@ private fun bgmResIdForRank(rankLevel: Int): Int = when (rankLevel) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * rememberDashboardAudio — plays the rank-appropriate ambient BGM loop for as
+ * DashboardAudioEffect — plays the rank-appropriate ambient BGM loop for as
  * long as the calling composable stays in the tree.
  *
  * ── Behaviour ────────────────────────────────────────────────────────────────
@@ -131,7 +132,7 @@ private fun bgmResIdForRank(rankLevel: Int): Int = when (rankLevel) {
  *                   False on welcome, rankup, and ascension screens.
  */
 @Composable
-fun rememberDashboardAudio(context: Context, rankLevel: Int, active: Boolean = true) {
+fun DashboardAudioEffect(context: Context, rankLevel: Int, active: Boolean = true) {
 
     // remember(rankLevel) destroys and recreates the player whenever the rank
     // changes, which naturally switches the track. The initial volume respects
