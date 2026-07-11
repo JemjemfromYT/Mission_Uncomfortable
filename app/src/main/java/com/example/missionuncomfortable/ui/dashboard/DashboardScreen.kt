@@ -1028,15 +1028,15 @@ private fun MissionCard(
                         )
                     }
 
-                    // ── SWAP MISSION BUTTON (location-dependent missions only) ────
-                    // v6: Now routes to one of two dialogs depending on swap availability:
+                    // ── SWAP MISSION BUTTON (difficulty 3, 4, or 5) ─────────────────
+                    // v7: Gate changed from isLocationDependent → difficulty >= 3.
                     //   • alternateMission != null → SwapConfirmDialog (real swap offered)
                     //   • alternateMission == null → SwapBlockedDialog (explains why blocked)
                     // Previously (v5) this always showed SwapBlockedDialog — a motivational
                     // "skipping is forbidden" popup with no actual swap. In v6, the swap is
                     // real but gated: only allowed once per day, and only within the
                     // difficulty window [currentD-2, currentD].
-                    if (mission.isLocationDependent) {
+                    if (mission.difficulty >= 3) {
                         Spacer(modifier = Modifier.height(10.dp))
 
                         Box(
