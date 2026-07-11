@@ -1,44 +1,64 @@
 /**
- * WelcomeScreen.kt  — v4  VISUAL OVERHAUL
+ * WelcomeScreen.kt
  *
- * ─── WHAT CHANGED IN v4 ──────────────────────────────────────────────────────
+ * The first screen a brand-new user sees when they open Mission: Uncomfortable.
  *
- *   Problems with v3:
- *     1. The emblem was still a circular badge drawn from emblem_welcome.xml —
- *        visually indistinguishable from any rank badge. Observer, Initiate, etc.
- *        all use circular badges. The welcome screen CANNOT use the same shape.
- *     2. Too much text — felt auto-generated and lifeless.
+ * ─── WHEN IS THIS SHOWN? ──────────────────────────────────────────────────────
  *
- *   What v4 does instead:
- *     • EMBLEM — completely removed emblem_welcome.xml.
- *       The welcome screen now renders a bespoke animated SIGIL drawn 100% in
- *       Compose Canvas — no drawable resource at all. The sigil is a diamond
- *       geometry (rotated square), NOT a circle, so it reads nothing like any
- *       rank badge. Components:
- *         – Outer diamond stroked in gold, slowly rotating clockwise.
- *         – Inner diamond, slightly smaller, rotating counter-clockwise.
- *         – 8 thin light rays emanating from the centre, slowly rotating.
- *         – A pulsing radial gradient orb at the exact centre.
- *         – Two concentric faint glow circles behind everything.
- *       The entire sigil fills ~260dp of vertical space and commands the screen.
- *     • TEXT — cut to the absolute minimum:
- *         – "UNCOMFORTABLE" (the brand word, 34sp, full brightness).
- *         – "Discomfort is the curriculum." (one line, very faint, 11sp).
- *         – "BEGIN YOUR JOURNEY" button.
- *       "WELCOME TO THE" is gone. The tagline card is gone.
- *     • ENTRANCE — same staggered reveal (sigil → title → button) but faster.
- *     • BUTTON — same gold shimmer sweep as v3.
- *     • BACKGROUND — same faint warm radial spotlight.
+ *   MainActivity checks SharedPreferences for the key "has_seen_welcome" on every launch.
+ *   If the key is missing (first install) or false, this screen is shown.
+ *   When the user taps "BEGIN YOUR JOURNEY", MainActivity writes true to that key
+ *   and switches to DashboardScreen. On every subsequent launch, this screen is skipped.
  *
- * ─── FILE LOCATION ───────────────────────────────────────────────────────────
+ * ─── DESIGN AESTHETIC ─────────────────────────────────────────────────────────
  *
- *   app/src/main/java/com/example/missionuncomfortable/ui/WelcomeScreen.kt
+ *   Matches the Dashboard exactly:
+ *     Background: near-black (#0D0D0D)
+ *     Primary text: off-white (#E0E0E0)
+ *     Secondary text: muted grey (#8A8A8A)
+ *     Accent: muted gold (#C8A84B)
+ *   No emojis. No colour outside the established palette.
  *
- * ─── PACKAGE ─────────────────────────────────────────────────────────────────
+ * ─── FUTURE WORK ──────────────────────────────────────────────────────────────
+ *
+ *   - Replace the static screen with a short 2–3 step onboarding flow (Pager composable).
+ *   - Add a name / username input so the ViewModel can personalise the Dashboard greeting.
+ *   - Persist the onboarding flag to Room / DataStore instead of SharedPreferences once
+ *     the database layer is set up.
+ *
+ * ─── CHANGELOG ───────────────────────────────────────────────────────────────
+ *
+ *   v1 — Initial implementation.
+ *        Single-screen welcome with badge image, title, tagline, and "BEGIN YOUR JOURNEY" button.
+ *        Wired to MainActivity via the onStartJourney callback.
+ *
+ *   v2 — Replaced the rank_badge_placeholder with the dedicated emblem_welcome drawable.
+ *        The welcome screen now has its own identity mark — a tactical targeting reticle —
+ *        distinct from any rank badge. The reticle represents precision and purpose,
+ *        not a user's current level.
+ *
+ *   v3 — Full visual overhaul: larger emblem, animated glow rings, staggered entrance,
+ *        atmospheric background, button shimmer. Too much text removed.
+ *
+ *   v4 — Replaced emblem_welcome.xml with a custom canvas-drawn spinning diamond sigil.
+ *        Removed "WELCOME TO THE" label. Cut text to minimum.
+ *
+ *   v5 — Reverted the spinning diamond back to emblem_welcome.xml.
+ *        The rotating geometry was too aggressive compared to rank badge animations
+ *        and distracted from the rest of the app's visual language.
+ *        Animation is now calm: one soft gold glow ring that breathes slowly behind
+ *        the emblem, nothing rotates or spins.
+ *        Text simplified: replaced lone word "UNCOMFORTABLE" (confusing without context)
+ *        with the full app name "Mission Uncomfortable" shown as a two-line label,
+ *        matching the same LABEL → NAME pattern used for rank names on the Dashboard.
+ *        Removed "Discomfort is the curriculum." tagline entirely — less is more.
+ *        Removed all canvas drawing imports that are no longer needed (Path, Stroke,
+ *        DrawScope, rotate, cos, sin).
  */
 
 package com.example.missionuncomfortable.ui.welcome
 
+// ─── IMPORTS ──────────────────────────────────────────────────────────────────
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -47,9 +67,11 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -61,129 +83,120 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.missionuncomfortable.R
 import kotlinx.coroutines.delay
-import kotlin.math.cos
-import kotlin.math.sin
 
-// ─── COLOURS ─────────────────────────────────────────────────────────────────
+// ─── COLOUR CONSTANTS ─────────────────────────────────────────────────────────
+// Duplicated from DashboardScreen so WelcomeScreen is self-contained and portable.
+// When a shared design-system file (e.g., Theme.kt or AppColors.kt) exists, move these there.
 
-private val ColorBackground    = Color(0xFF0D0D0D)
-private val ColorTextPrimary   = Color(0xFFE0E0E0)
-private val ColorTextSecondary = Color(0xFF8A8A8A)
-private val ColorAccentGold    = Color(0xFFC8A84B)
-private val ColorHotGold       = Color(0xFFDCB65C)
+private val ColorBackground    = Color(0xFF0D0D0D)   // Near-black — main screen background
+private val ColorTextPrimary   = Color(0xFFE0E0E0)   // Off-white — headings and primary text
+private val ColorTextSecondary = Color(0xFF8A8A8A)   // Muted grey — supporting text
+private val ColorAccentGold    = Color(0xFFC8A84B)   // Muted gold — CTA button + glow accent
+private val ColorHotGold       = Color(0xFFDCB65C)   // Warmer gold — inner glow ring
 
-// ─── ROOT COMPOSABLE ─────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// ROOT COMPOSABLE — WelcomeScreen
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * WelcomeScreen — shown once on first launch.
+ * WelcomeScreen — the intro screen shown on first launch.
  *
- * @param onStartJourney  MainActivity callback: write has_seen_welcome=true,
- *                        then switch to DashboardScreen.
+ * Stateless: all it needs is a callback to call when the user taps "BEGIN YOUR JOURNEY".
+ * MainActivity owns the SharedPreferences write + the navigation decision.
+ *
+ * @param onStartJourney  Called when the user taps the CTA button.
+ *                        MainActivity should: (1) write has_seen_welcome=true to SharedPreferences,
+ *                        (2) switch showDashboard state to true so DashboardScreen is shown.
  */
 @Composable
 fun WelcomeScreen(onStartJourney: () -> Unit) {
 
     // ── ENTRANCE ANIMATION FLAGS ─────────────────────────────────────────────
-    var showSigil  by remember { mutableStateOf(false) }
+    // Three stages staggered so each element arrives one at a time.
+    // Simple fade + gentle upward slide — nothing dramatic.
+    var showEmblem by remember { mutableStateOf(false) }
     var showTitle  by remember { mutableStateOf(false) }
     var showButton by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        showSigil  = true
-        delay(350L); showTitle  = true
-        delay(280L); showButton = true
+        showEmblem = true                    // Emblem appears immediately on mount
+        delay(400L); showTitle  = true       // App name fades in 400 ms later
+        delay(300L); showButton = true       // Button fades in 300 ms after title
     }
 
-    val sigilAlpha  by animateFloatAsState(
-        targetValue = if (showSigil)  1f else 0f,
-        animationSpec = tween(800, easing = FastOutSlowInEasing), label = "sigilAlpha"
+    // animateFloatAsState converts each boolean flip into a smooth eased float.
+    // alpha:  0f (invisible) → 1f (fully visible)
+    // slide:  positive dp value (shifted down) → 0f (in position)
+    val emblemAlpha by animateFloatAsState(
+        targetValue   = if (showEmblem) 1f else 0f,
+        animationSpec = tween(700, easing = FastOutSlowInEasing),
+        label         = "emblemAlpha"
     )
-    val sigilSlide  by animateFloatAsState(
-        targetValue = if (showSigil)  0f else 50f,
-        animationSpec = tween(800, easing = FastOutSlowInEasing), label = "sigilSlide"
+    val emblemSlide by animateFloatAsState(
+        targetValue   = if (showEmblem) 0f else 32f,
+        animationSpec = tween(700, easing = FastOutSlowInEasing),
+        label         = "emblemSlide"
     )
-    val titleAlpha  by animateFloatAsState(
-        targetValue = if (showTitle)  1f else 0f,
-        animationSpec = tween(600, easing = FastOutSlowInEasing), label = "titleAlpha"
+    val titleAlpha by animateFloatAsState(
+        targetValue   = if (showTitle) 1f else 0f,
+        animationSpec = tween(500, easing = FastOutSlowInEasing),
+        label         = "titleAlpha"
     )
-    val titleSlide  by animateFloatAsState(
-        targetValue = if (showTitle)  0f else 28f,
-        animationSpec = tween(600, easing = FastOutSlowInEasing), label = "titleSlide"
+    val titleSlide by animateFloatAsState(
+        targetValue   = if (showTitle) 0f else 20f,
+        animationSpec = tween(500, easing = FastOutSlowInEasing),
+        label         = "titleSlide"
     )
     val buttonAlpha by animateFloatAsState(
-        targetValue = if (showButton) 1f else 0f,
-        animationSpec = tween(500, easing = FastOutSlowInEasing), label = "buttonAlpha"
+        targetValue   = if (showButton) 1f else 0f,
+        animationSpec = tween(400, easing = FastOutSlowInEasing),
+        label         = "buttonAlpha"
     )
 
     // ── CONTINUOUS ANIMATIONS ────────────────────────────────────────────────
+    // Only two loops run on this screen:
+    //   1. Glow pulse — the soft gold ring behind the emblem breathes slowly.
+    //      Nothing rotates. Nothing spins. The emblem just quietly glows.
+    //   2. Button shimmer — a narrow bright streak sweeps across the gold button.
+    // This matches the calm visual weight of the Observer rank (no glow at all on
+    // the Dashboard) and stays well below the intensity of even Initiate's halo —
+    // the welcome screen should feel like an introduction, not a rank achievement.
     val infiniteTransition = rememberInfiniteTransition(label = "WelcomeLoop")
 
-    // Outer diamond: slow clockwise rotation — full revolution in 20 s
-    val outerDiamondAngle by infiniteTransition.animateFloat(
-        initialValue = 0f, targetValue = 360f,
+    // Glow pulse: outer ring breathes between 0.25 and 0.55 alpha over 3 800 ms.
+    // Slow enough to feel atmospheric, not urgent.
+    val glowPulse by infiniteTransition.animateFloat(
+        initialValue  = 0.25f,
+        targetValue   = 0.55f,
         animationSpec = infiniteRepeatable(
-            animation = tween(20000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ), label = "OuterDiamondAngle"
-    )
-
-    // Inner diamond: slow counter-clockwise rotation — full revolution in 14 s
-    val innerDiamondAngle by infiniteTransition.animateFloat(
-        initialValue = 0f, targetValue = -360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(14000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ), label = "InnerDiamondAngle"
-    )
-
-    // Light rays: rotate with the outer diamond but at their own speed (8 s)
-    val rayAngle by infiniteTransition.animateFloat(
-        initialValue = 0f, targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(18000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ), label = "RayAngle"
-    )
-
-    // Centre orb: breathing pulse — alpha oscillates between 0.55 and 1.0
-    val orbAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.55f, targetValue = 1.00f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1800, easing = FastOutSlowInEasing),
+            animation  = tween(3800, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
-        ), label = "OrbAlpha"
+        ),
+        label = "GlowPulse"
     )
 
-    // Outer glow ring: slower breathing — 0.25 → 0.55
-    val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.25f, targetValue = 0.55f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(3200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ), label = "GlowAlpha"
-    )
-
-    // CTA button shimmer sweep
+    // Button shimmer: a light glint that sweeps left→right across the gold button
+    // on a 3 200 ms loop. Reads as polished metal, not a loading bar.
     val buttonShimmer by infiniteTransition.animateFloat(
-        initialValue = -0.5f, targetValue = 1.5f,
+        initialValue  = -0.5f,
+        targetValue   = 1.5f,
         animationSpec = infiniteRepeatable(
-            animation = tween(3000, easing = LinearEasing),
+            animation  = tween(3200, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
-        ), label = "ButtonShimmer"
+        ),
+        label = "ButtonShimmer"
     )
 
-    // ── LAYOUT ──────────────────────────────────────────────────────────────
+    // ── LAYOUT ───────────────────────────────────────────────────────────────
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -191,24 +204,28 @@ fun WelcomeScreen(onStartJourney: () -> Unit) {
         contentAlignment = Alignment.Center
     ) {
 
-        // Atmospheric background: warm faint spotlight behind the sigil
+        // ── ATMOSPHERIC BACKGROUND ────────────────────────────────────────
+        // A faint warm radial gradient centred where the emblem sits.
+        // Makes the dark background feel like a spotlight is on the emblem
+        // rather than the emblem just floating in an empty void.
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .drawBehind {
-                    val spotCenter = Offset(size.width / 2f, size.height * 0.38f)
+                    val spotCenter = Offset(size.width / 2f, size.height * 0.36f)
                     drawCircle(
                         brush = Brush.radialGradient(
-                            colors = listOf(Color(0xFF1C1609), Color.Transparent),
+                            colors = listOf(Color(0xFF181208), Color.Transparent),
                             center = spotCenter,
-                            radius = size.width * 0.85f
+                            radius = size.width * 0.80f
                         ),
-                        radius = size.width * 0.85f,
+                        radius = size.width * 0.80f,
                         center = spotCenter
                     )
                 }
         )
 
+        // ── MAIN CONTENT COLUMN ───────────────────────────────────────────
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
@@ -217,235 +234,81 @@ fun WelcomeScreen(onStartJourney: () -> Unit) {
                 .padding(horizontal = 40.dp)
         ) {
 
-            // ── ANIMATED SIGIL ────────────────────────────────────────────
-            // Drawn 100% in Compose Canvas — no drawable XML at all.
-            // Shape: diamond geometry (rotated squares), NOT a circle.
-            // This cannot be confused with any rank badge.
+            // ── EMBLEM WITH GLOW ──────────────────────────────────────────
+            // Uses emblem_welcome.xml — the tactical targeting reticle.
+            // This is the correct asset for this screen and it stays.
             //
-            // Visual layers (bottom to top):
-            //   1. Wide soft glow circle behind everything
-            //   2. 8 thin light rays rotating outward from centre
-            //   3. Outer diamond (square rotated 45°), slow CW rotation
-            //   4. Tick marks at the midpoints of each outer diamond side
-            //   5. Inner diamond, slightly smaller, slow CCW rotation
-            //   6. Four short cardinal lines from centre (static crosshair)
-            //   7. Pulsing radial orb at the exact centre
-            val sigilSize = 280.dp
-
+            // Behind it: a single soft radial glow that breathes slowly.
+            // Two layers:
+            //   • Wide outer halo — marks the emblem's presence on screen.
+            //   • Tighter inner ring just outside the emblem edge — gives a
+            //     subtle "lit from within" look without overpowering the art.
+            //
+            // Container is 220dp so the glow has breathing room around the
+            // 140dp emblem image without being clipped.
             Box(
+                contentAlignment = Alignment.Center,
                 modifier = Modifier
-                    .size(sigilSize)
+                    .size(220.dp)
                     .graphicsLayer {
-                        alpha = sigilAlpha
-                        translationY = sigilSlide
+                        alpha        = emblemAlpha
+                        translationY = emblemSlide
                     }
                     .drawBehind {
-                        val cx = center.x
-                        val cy = center.y
-                        val r  = size.minDimension / 2f
+                        val r = size.minDimension / 2f
 
-                        // ── 1. OUTER ATMOSPHERIC GLOW ──────────────────────
-                        // A wide, very soft radial gradient — the sigil feels
-                        // like it emanates light, not just sits in darkness.
+                        // Wide outer halo — very soft, fades to transparent at edges
                         drawCircle(
                             brush = Brush.radialGradient(
                                 colors = listOf(
-                                    ColorAccentGold.copy(alpha = glowAlpha * 0.55f),
-                                    ColorAccentGold.copy(alpha = glowAlpha * 0.18f),
+                                    ColorAccentGold.copy(alpha = glowPulse * 0.45f),
+                                    ColorAccentGold.copy(alpha = glowPulse * 0.10f),
                                     Color.Transparent
                                 ),
                                 center = center,
-                                radius = r * 0.85f
+                                radius = r
                             ),
-                            radius = r * 0.85f
+                            radius = r
                         )
 
-                        // ── 2. RADIANT LIGHT RAYS ───────────────────────────
-                        // 8 thin beams radiating outward from a inner ring,
-                        // fading to transparent at the container edge.
-                        // Rotated slowly so they feel alive.
-                        rotate(degrees = rayAngle, pivot = center) {
-                            val rayCount  = 8
-                            val rayInner  = r * 0.30f   // Rays start here (just outside centre orb)
-                            val rayOuter  = r * 0.82f   // Rays end here (near container edge)
-                            val rayWidth  = r * 0.013f  // Thin — these are light, not bars
-                            for (i in 0 until rayCount) {
-                                val angleRad = Math.toRadians((i * (360.0 / rayCount))).toFloat()
-                                val startX = cx + rayInner * cos(angleRad)
-                                val startY = cy + rayInner * sin(angleRad)
-                                val endX   = cx + rayOuter * cos(angleRad)
-                                val endY   = cy + rayOuter * sin(angleRad)
-                                drawLine(
-                                    brush = Brush.linearGradient(
-                                        colors = listOf(
-                                            ColorAccentGold.copy(alpha = glowAlpha * 0.90f),
-                                            Color.Transparent
-                                        ),
-                                        start = Offset(startX, startY),
-                                        end   = Offset(endX, endY)
-                                    ),
-                                    start = Offset(startX, startY),
-                                    end   = Offset(endX,   endY),
-                                    strokeWidth = rayWidth,
-                                    cap = StrokeCap.Round
-                                )
-                            }
-                        }
-
-                        // ── 3. OUTER DIAMOND ─────────────────────────────────
-                        // A square rotated 45° → diamond shape.
-                        // Slowly rotating clockwise — organic, not mechanical.
-                        // NOT a circle — visually distinct from every rank badge.
-                        rotate(degrees = outerDiamondAngle + 45f, pivot = center) {
-                            val half = r * 0.72f   // Half the diamond's diagonal
-                            val path = Path().apply {
-                                moveTo(cx, cy - half)       // Top
-                                lineTo(cx + half, cy)       // Right
-                                lineTo(cx, cy + half)       // Bottom
-                                lineTo(cx - half, cy)       // Left
-                                close()
-                            }
-                            drawPath(
-                                path = path,
-                                color = ColorAccentGold.copy(alpha = 0.88f),
-                                style = Stroke(width = r * 0.022f)
-                            )
-                            // Corner accent dots — small filled circles at each corner
-                            val dotRadius = r * 0.028f
-                            listOf(
-                                Offset(cx, cy - half),
-                                Offset(cx + half, cy),
-                                Offset(cx, cy + half),
-                                Offset(cx - half, cy)
-                            ).forEach { pt ->
-                                drawCircle(
-                                    color = ColorHotGold.copy(alpha = 0.95f),
-                                    radius = dotRadius,
-                                    center = pt
-                                )
-                            }
-                        }
-
-                        // ── 4. OUTER DIAMOND MIDPOINT TICKS ─────────────────
-                        // Short perpendicular tick lines at the midpoint of each
-                        // outer diamond side — gives the diamond a refined,
-                        // measured look (like a jeweller's cut mark).
-                        rotate(degrees = outerDiamondAngle + 45f, pivot = center) {
-                            val half   = r * 0.72f
-                            val tickLen = r * 0.06f
-                            // Midpoints of each side are at the diagonals
-                            val mids = listOf(
-                                Offset(cx + half * 0.5f, cy - half * 0.5f),  // Top-right side midpoint
-                                Offset(cx + half * 0.5f, cy + half * 0.5f),  // Bottom-right side midpoint
-                                Offset(cx - half * 0.5f, cy + half * 0.5f),  // Bottom-left side midpoint
-                                Offset(cx - half * 0.5f, cy - half * 0.5f)   // Top-left side midpoint
-                            )
-                            // Tick direction is perpendicular to each side (45° rotated)
-                            val dirs = listOf(
-                                Offset(1f, 1f),   // NE side → tick goes NW-SE
-                                Offset(-1f, 1f),  // SE side → tick goes NE-SW
-                                Offset(-1f, -1f), // SW side → tick goes SE-NW
-                                Offset(1f, -1f)   // NW side → tick goes SW-NE
-                            )
-                            for (i in mids.indices) {
-                                val m   = mids[i]
-                                val dir = dirs[i]
-                                val norm = 0.7071f   // 1/sqrt(2) to normalize diagonal
-                                val dx  = dir.x * norm * tickLen
-                                val dy  = dir.y * norm * tickLen
-                                drawLine(
-                                    color = ColorAccentGold.copy(alpha = 0.65f),
-                                    start = Offset(m.x - dx, m.y - dy),
-                                    end   = Offset(m.x + dx, m.y + dy),
-                                    strokeWidth = r * 0.016f,
-                                    cap = StrokeCap.Round
-                                )
-                            }
-                        }
-
-                        // ── 5. INNER DIAMOND ─────────────────────────────────
-                        // Smaller diamond, rotating counter-clockwise.
-                        // The counter-rotation against the outer diamond creates
-                        // a sense of internal tension and depth.
-                        rotate(degrees = innerDiamondAngle + 45f, pivot = center) {
-                            val half = r * 0.44f
-                            val path = Path().apply {
-                                moveTo(cx, cy - half)
-                                lineTo(cx + half, cy)
-                                lineTo(cx, cy + half)
-                                lineTo(cx - half, cy)
-                                close()
-                            }
-                            drawPath(
-                                path = path,
-                                color = ColorHotGold.copy(alpha = 0.72f),
-                                style = Stroke(width = r * 0.016f)
-                            )
-                        }
-
-                        // ── 6. STATIC CARDINAL CROSSHAIR LINES ───────────────
-                        // Four short lines from just outside the inner orb to
-                        // just inside the inner diamond — a static anchor in the
-                        // middle of all the rotating geometry.
-                        val crossLen   = r * 0.20f
-                        val crossInner = r * 0.12f
-                        listOf(
-                            // Top
-                            Offset(cx, cy - crossInner) to Offset(cx, cy - crossInner - crossLen),
-                            // Bottom
-                            Offset(cx, cy + crossInner) to Offset(cx, cy + crossInner + crossLen),
-                            // Left
-                            Offset(cx - crossInner, cy) to Offset(cx - crossInner - crossLen, cy),
-                            // Right
-                            Offset(cx + crossInner, cy) to Offset(cx + crossInner + crossLen, cy)
-                        ).forEach { (s, e) ->
-                            drawLine(
-                                color = ColorAccentGold.copy(alpha = 0.80f),
-                                start = s,
-                                end   = e,
-                                strokeWidth = r * 0.018f,
-                                cap = StrokeCap.Round
-                            )
-                        }
-
-                        // ── 7. CENTRE ORB ─────────────────────────────────────
-                        // A small pulsing radial glow at the exact centre —
-                        // the "locked target" point of the sigil.
-                        // Three layers: outer soft halo, mid glow, solid bright core.
+                        // Tighter inner ring — peaks just outside the emblem edge,
+                        // giving the reticle a crisp gold outline without obscuring the art
                         drawCircle(
                             brush = Brush.radialGradient(
-                                colors = listOf(
-                                    ColorHotGold.copy(alpha = orbAlpha * 0.45f),
-                                    Color.Transparent
+                                colorStops = arrayOf(
+                                    0.00f to Color.Transparent,
+                                    0.54f to Color.Transparent,
+                                    0.62f to ColorHotGold.copy(alpha = glowPulse * 0.75f),
+                                    1.00f to Color.Transparent
                                 ),
                                 center = center,
-                                radius = r * 0.18f
+                                radius = r
                             ),
-                            radius = r * 0.18f
-                        )
-                        drawCircle(
-                            brush = Brush.radialGradient(
-                                colors = listOf(
-                                    ColorHotGold.copy(alpha = orbAlpha * 0.80f),
-                                    Color.Transparent
-                                ),
-                                center = center,
-                                radius = r * 0.09f
-                            ),
-                            radius = r * 0.09f
-                        )
-                        drawCircle(
-                            color = Color(0xFFFFF4CC).copy(alpha = (orbAlpha * 0.95f).coerceAtMost(1f)),
-                            radius = r * 0.035f,
-                            center = center
+                            radius = r
                         )
                     }
-            )
+            ) {
+                // The targeting reticle image — clipped to a circle for clean containment.
+                Image(
+                    painter            = painterResource(id = R.drawable.emblem_welcome),
+                    contentDescription = "Mission Uncomfortable emblem",
+                    contentScale       = ContentScale.Fit,
+                    modifier           = Modifier
+                        .size(140.dp)
+                        .clip(CircleShape)
+                )
+            }
 
-            Spacer(modifier = Modifier.height(44.dp))
+            Spacer(modifier = Modifier.height(36.dp))
 
-            // ── BRAND WORD ────────────────────────────────────────────────
-            // One word. Maximum weight. That's it.
+            // ── APP NAME ──────────────────────────────────────────────────
+            // Displays the full app name so the user immediately knows what
+            // app they just opened — no abstract words, no philosophy.
+            //
+            // Layout mirrors how rank names are shown on the Dashboard:
+            //   • Small all-caps gold label ("MISSION") — the category
+            //   • Larger bright name below ("Uncomfortable") — the identity
+            // This way the name reads as a title card, not a statement.
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.graphicsLayer {
@@ -453,27 +316,41 @@ fun WelcomeScreen(onStartJourney: () -> Unit) {
                     translationY = titleSlide
                 }
             ) {
+                // "MISSION" — small gold label, heavily tracked, like a category tag
                 Text(
-                    text = "UNCOMFORTABLE",
-                    color = ColorTextPrimary,
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 3.sp,
-                    textAlign = TextAlign.Center
+                    text       = "MISSION",
+                    color      = ColorAccentGold.copy(alpha = 0.85f),
+                    fontSize   = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 5.sp,
+                    textAlign  = TextAlign.Center
                 )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
-                // Gold separator — thin horizontal accent line
+                // "Uncomfortable" — the app name, full brightness, bold
+                Text(
+                    text       = "Uncomfortable",
+                    color      = ColorTextPrimary,
+                    fontSize   = 28.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp,
+                    textAlign  = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Gold separator line — thin accent stroke between the name and button.
+                // Provides visual breathing room and reinforces the gold palette.
                 Box(
                     modifier = Modifier
-                        .width(56.dp)
+                        .width(48.dp)
                         .height(1.dp)
                         .background(
                             Brush.horizontalGradient(
                                 colors = listOf(
                                     Color.Transparent,
-                                    ColorAccentGold.copy(alpha = 0.75f),
+                                    ColorAccentGold.copy(alpha = 0.70f),
                                     Color.Transparent
                                 )
                             )
@@ -484,55 +361,43 @@ fun WelcomeScreen(onStartJourney: () -> Unit) {
             Spacer(modifier = Modifier.height(52.dp))
 
             // ── CTA BUTTON ────────────────────────────────────────────────
-            // Gold fill + sweeping shimmer streak = polished metal feel.
+            // Gold fill with a slow shimmer sweep for a polished-metal feel.
+            // Styled the same as "ACCEPT THE MISSION" on the Dashboard.
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(54.dp)
+                    .height(52.dp)
                     .graphicsLayer { alpha = buttonAlpha }
                     .clip(RoundedCornerShape(10.dp))
                     .background(ColorAccentGold)
                     .drawWithContent {
-                        drawContent()
-                        val shimmerStartX = size.width * buttonShimmer
-                        val shimmerWidth  = size.width * 0.38f
+                        drawContent()     // Draw button label first
+                        // Shimmer overlay: narrow bright streak travels left → right
+                        val sx = size.width * buttonShimmer
+                        val sw = size.width * 0.36f
                         drawRect(
                             brush = Brush.horizontalGradient(
                                 colors = listOf(
                                     Color.Transparent,
-                                    Color.White.copy(alpha = 0.20f),
+                                    Color.White.copy(alpha = 0.18f),
                                     Color.Transparent
                                 ),
-                                startX = shimmerStartX,
-                                endX   = shimmerStartX + shimmerWidth
+                                startX = sx,
+                                endX   = sx + sw
                             )
                         )
                     }
                     .clickable(onClick = onStartJourney)
             ) {
                 Text(
-                    text = "BEGIN YOUR JOURNEY",
-                    color = Color(0xFF0D0D0D),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
+                    text          = "BEGIN YOUR JOURNEY",
+                    color         = Color(0xFF0D0D0D),    // Near-black on gold — high contrast
+                    fontSize      = 13.sp,
+                    fontWeight    = FontWeight.Bold,
                     letterSpacing = 1.5.sp
                 )
             }
-
-            Spacer(modifier = Modifier.height(18.dp))
-
-            // ── SINGLE FAINT TAGLINE ──────────────────────────────────────
-            // One line. Very faint. Almost invisible. Sets the tone without
-            // cluttering the screen with explanation.
-            Text(
-                text = "Discomfort is the curriculum.",
-                color = ColorTextSecondary.copy(alpha = 0.40f),
-                fontSize = 11.sp,
-                letterSpacing = 0.8.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.graphicsLayer { alpha = buttonAlpha }
-            )
         }
     }
 }
