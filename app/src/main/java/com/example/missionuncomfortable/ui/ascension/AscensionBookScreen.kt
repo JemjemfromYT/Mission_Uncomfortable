@@ -92,6 +92,11 @@
  *      belong on the MAIN SCREEN, not here. The book screen now uses a single
  *      dedicated track: bgm_book.mp3. rememberAscensionAudio no longer accepts
  *      rankLevel; it always loads bgm_book regardless of rank.
+ * v11 — Fixed silent BGM failure. Synchronous prepare() on the composition
+ *      (main) thread caused MediaPlayerNative error (1, -2147483648) on device.
+ *      Replaced with prepareAsync() + setOnPreparedListener { start() } so
+ *      the player self-starts off the main thread. Removed the redundant
+ *      LaunchedEffect(Unit) { startBgm() } — the listener handles it.
  */
 
 package com.example.missionuncomfortable.ui.ascension
@@ -237,9 +242,14 @@ private class AscensionAudioState(
     private val pool: SoundPool,
     private val soundIds: Map<SfxEvent, Int>
 ) {
-    /** Start (or resume) the looping BGM. Safe to call multiple times. */
-    fun startBgm() {
-        bgmPlayer?.let { if (!it.isPlaying) it.start() }
+    /**
+     * Resume the BGM after a pause. The initial start is handled automatically
+     * by setOnPreparedListener inside rememberAscensionAudio — do NOT call
+     * this for the first play or it may throw IllegalStateException if the
+     * player has not finished prepareAsync() yet.
+     */
+    fun resumeBgm() {
+        bgmPlayer?.let { runCatching { if (!it.isPlaying) it.start() } }
     }
 
     /** Pause the BGM. */
@@ -277,8 +287,9 @@ private val sfxResIds = mapOf(
  * rememberAscensionAudio — creates, remembers, and auto-releases an
  * AscensionAudioState tied to the current composition lifecycle.
  *
- * - MediaPlayer: created synchronously (prepare() is called on the calling
- *   thread, which is fine for compressed audio in res/raw).
+ * - MediaPlayer: uses prepareAsync() + setOnPreparedListener so the audio
+ *   system thread handles buffering — never blocks the main/composition thread.
+ *   The listener calls start() automatically when preparation completes.
  * - SoundPool: sounds are loaded in the background; any SFX played before its
  *   load completes is silently skipped (SoundPool's default behaviour).
  *
@@ -293,6 +304,12 @@ private fun rememberAscensionAudio(context: Context): AscensionAudioState {
         // bgm_book.mp3 is the ONLY BGM used inside the book screen.
         // R.raw.bgm_book is a compile-time constant — no getIdentifier() needed.
         // The 5 rank-specific tracks (bgm_observer, etc.) belong on the main screen.
+        //
+        // prepareAsync() is non-blocking: the MediaPlayer system thread handles
+        // buffering. setOnPreparedListener fires on that thread when ready and
+        // calls start() automatically — no external startBgm() call needed for
+        // the initial play. This avoids the MEDIA_ERROR_SYSTEM (1,-2147483648)
+        // that synchronous prepare() caused when called on the main thread.
         val bgmPlayer: MediaPlayer? = runCatching {
             MediaPlayer().apply {
                 val afd = context.resources.openRawResourceFd(R.raw.bgm_book)
@@ -306,9 +323,8 @@ private fun rememberAscensionAudio(context: Context): AscensionAudioState {
                 )
                 isLooping = true
                 setVolume(0.50f, 0.50f) // 50% — atmospheric, not overpowering
-                // prepare() is synchronous and fine for local res/raw files
-                // (no network I/O — just reads a file descriptor).
-                prepare()
+                setOnPreparedListener { mp -> mp.start() } // self-starts when ready
+                prepareAsync()                              // never blocks main thread
             }
         }.getOrNull() // null if file missing — degrades gracefully with no crash
 
@@ -358,14 +374,12 @@ fun AscensionBookScreen(rank: Rank, onFinish: () -> Unit) {
     var stage by remember { mutableStateOf(BookStage.CLOSED) }
 
     // ── AUDIO ─────────────────────────────────────────────────────────────────
-    // Initialised once per rank; released automatically when this composable
-    // leaves the tree (via DisposableEffect inside rememberAscensionAudio).
+    // BGM starts automatically via setOnPreparedListener inside rememberAscensionAudio
+    // — no LaunchedEffect needed for the initial play. Released automatically
+    // when this composable leaves the tree (DisposableEffect inside that function).
     val audio = rememberAscensionAudio(context)
 
-    // Start BGM as soon as the screen appears.
-    LaunchedEffect(Unit) { audio.startBgm() }
-
-    // Stop BGM on close; the existing 600ms delay still fires onFinish.
+    // Stop BGM on close; fade-out runs for 600 ms before calling onFinish().
     LaunchedEffect(stage) {
         if (stage == BookStage.CLOSING) {
             audio.stopBgm()
