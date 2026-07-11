@@ -223,7 +223,6 @@ import androidx.compose.runtime.LaunchedEffect                          // Side-
 import androidx.compose.runtime.getValue                                // Property delegate for State
 import androidx.compose.runtime.mutableStateOf                          // Observable mutable state holder
 import androidx.compose.runtime.remember                                // Keeps value across recompositions
-import androidx.compose.runtime.setValue                                // Property delegate for mutable State
 import androidx.compose.runtime.livedata.observeAsState                 // Bridges LiveData → Compose State
 import androidx.compose.ui.Modifier                                     // Modifier chain
 import androidx.compose.ui.graphics.Color                               // Colour class
