@@ -97,6 +97,10 @@
  *      Replaced with prepareAsync() + setOnPreparedListener { start() } so
  *      the player self-starts off the main thread. Removed the redundant
  *      LaunchedEffect(Unit) { startBgm() } — the listener handles it.
+ * v12 — Fixed "pause called in state 0" crash on close. stopBgm() now calls
+ *      setVolume(0f,0f) instead of pause() — safe to call in any MediaPlayer
+ *      state including PREPARING. The player is fully released when the
+ *      composable leaves the tree via DisposableEffect.
  */
 
 package com.example.missionuncomfortable.ui.ascension
@@ -242,9 +246,16 @@ private class AscensionAudioState(
     private val pool: SoundPool,
     private val soundIds: Map<SfxEvent, Int>
 ) {
-    /** Pause the BGM (called on CLOSING). The initial start is handled
-     *  automatically by setOnPreparedListener — no matching startBgm() needed. */
-    fun stopBgm() { runCatching { bgmPlayer?.pause() } }
+    /**
+     * Silences the BGM when the book is closing.
+     *
+     * Uses setVolume(0,0) instead of pause() because pause() throws
+     * "pause called in state 0" if prepareAsync() has not finished yet.
+     * setVolume() is safe to call in ANY MediaPlayer state — it simply
+     * drops the output to zero. The player is fully released 600 ms later
+     * when DisposableEffect.onDispose() fires as the composable leaves the tree.
+     */
+    fun stopBgm() { runCatching { bgmPlayer?.setVolume(0f, 0f) } }
 
     /** Play a one-shot SFX. Silently skips if the sound file was absent. */
     fun playSfx(event: SfxEvent) {
